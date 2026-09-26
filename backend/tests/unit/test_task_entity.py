@@ -159,3 +159,24 @@ class TestTimestampsAreStoredInUtc:
             assert stamp is not None
             assert stamp.tzinfo is UTC
             assert stamp == local_now
+
+    @pytest.mark.parametrize(
+        ("method", "value"),
+        [
+            ("rename", "Changed"),
+            ("describe", "Changed"),
+            ("set_due_date", date(2030, 1, 1)),
+            ("assign", 99),
+            ("change_status", TaskStatus.IN_PROGRESS),
+        ],
+    )
+    def test_every_mutator_stores_updated_at_in_utc(
+        self, method: str, value: object
+    ) -> None:
+        local_later = datetime(2026, 9, 26, 8, 0, tzinfo=timezone(timedelta(hours=-5)))
+        task = make_task()
+
+        getattr(task, method)(value, now=local_later)
+
+        assert task.updated_at.tzinfo is UTC
+        assert task.updated_at == local_later
