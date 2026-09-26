@@ -2,9 +2,12 @@
 per authenticated user (falling back to IP for missing or invalid tokens, so
 rotating junk tokens does not yield fresh counters)."""
 
+from typing import Any
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.api.schemas import ErrorResponse
 from app.infrastructure.rate_limiter import RateLimiter
 
 
@@ -31,7 +34,7 @@ def _user_or_ip(request: Request) -> str:
 
 def _enforce(request: Request, limit: str, key: str) -> None:
     limiter: RateLimiter = request.app.state.rate_limiter
-    decision = limiter.hit(limit, key)
+    decision = limiter.hit(limit, f"{request.app.state.limits.key_prefix}:{key}")
     if not decision.allowed:
         raise RateLimitedError(decision.retry_after)
 
@@ -55,3 +58,18 @@ async def _rate_limited_handler(_: Request, exc: Exception) -> JSONResponse:
 
 def register_rate_limit_handler(app: FastAPI) -> None:
     app.add_exception_handler(RateLimitedError, _rate_limited_handler)
+
+
+# Documented on every /api/v1 operation: any of them can be rate limited.
+RATE_LIMIT_RESPONSE: dict[int | str, dict[str, Any]] = {
+    429: {
+        "model": ErrorResponse,
+        "description": "Too many requests",
+        "headers": {
+            "Retry-After": {
+                "description": "Seconds until the limit resets",
+                "schema": {"type": "integer"},
+            }
+        },
+    }
+}

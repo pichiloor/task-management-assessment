@@ -15,7 +15,6 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     response_model=TokenResponse,
     responses={
         401: {"model": ErrorResponse, "description": "Bad credentials"},
-        429: {"model": ErrorResponse, "description": "Too many login attempts"},
     },
     dependencies=[Depends(limit_login)],
     summary="Log in with email (as username) and password",

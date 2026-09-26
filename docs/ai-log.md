@@ -381,11 +381,14 @@
 
 - Tool: Claude Code (model `claude-opus-5-5`). Tests first in `5f28e17` (red:
   `cannot import name 'RateLimitSettings'`).
-- Library decision, approved by the author: slowapi's decorators bind limits at
-  import time, but `create_app` receives settings per instance (tests use
-  different limits), and exempting `/api/health` needed slowapi's private
-  attributes. slowapi was replaced by the `limits` library it wraps
-  (`limits==5.8.0`, already in the lockfile as its dependency).
+- Library decision, approved by the author: slowapi was replaced by the
+  `limits` library it wraps (`limits==5.8.0`, already in the lockfile as its
+  dependency). Claude's first justification ("decorators bind limits at import
+  time", "exempting health needs private attributes") was overstated: Codex
+  checked that slowapi 0.1.10 supports callable limits and a public `exempt`
+  decorator. The real reason is that its decorator/middleware model was
+  awkward to combine with per-app settings built in `create_app`; the switch
+  is a preference, not a necessity.
 - Behavior: login `5/minute` per client IP; all of `/api/v1` `120/minute` per
   user, keyed by IP when the token is missing or invalid so junk tokens do not
   get fresh counters; health and docs are not limited. 429 uses the standard
@@ -401,3 +404,36 @@
   Live in the `api` container: the 6th bad login returned 429 with
   `Retry-After: 60` and the counter key was in Redis; with Redis stopped, the
   6th attempt was still 429 and the log showed the in-memory fallback.
+
+## 2026-09-26 — Codex review of step 8
+
+- Reviewer: Codex, model `gpt-6-astra`, read-only. Six defects (none high) and
+  several suggestions; accepted (tests first in `1374d8b`: 6 unit tests failed):
+  - Medium: `limits`' MemoryStorage checks expiry outside its increment lock,
+    so concurrent hits on the in-memory fallback could be lost (Codex admitted
+    2 requests under `1/minute`). All in-memory hits are now serialized.
+  - Medium: `limits.parse` keeps only the first of `"100/second; 5/minute"`,
+    accepts `0/minute` and rewrites `5/0 seconds` as one second. Settings now
+    require exactly one limit with positive amount and period (strict regex).
+  - Medium: the Redis test ran `flushdb` on whatever `TEST_REDIS_URL` named.
+    It now refuses database 0, uses a unique key prefix per run
+    (`RATE_LIMIT_KEY_PREFIX`) and deletes only its own keys in `finally`.
+  - Low: the window-reset test depended on two Argon2 logins finishing within
+    a second; it is now a unit test on the limiter.
+  - Low: only login documented 429; every `/api/v1` operation now documents it
+    with `Retry-After`.
+  - Low: the slowapi justification was overstated (corrected above).
+  - Suggestions adopted: only one request probes Redis after the retry window
+    (others stay in memory); only storage errors trigger the fallback, so bugs
+    are not swallowed; a multi-hop X-Forwarded-For test; a test that a blocked
+    login does no Argon2 work; a Redis recovery test; Compose passes the
+    `RATE_LIMIT_*` settings.
+- Claude's own test mistake, caught by checking: the first concurrency test
+  paused after `MemoryStorage.get` removed the key, not between the expiry
+  check and the removal, so it passed even without the lock. Rewritten; now it
+  fails 3/3 without the lock and passes 3/3 with it. The single-probe test was
+  checked the same way (fails when every thread may probe). In `1374d8b` the
+  concurrency tests had failed only because the new constructor arguments did
+  not exist yet, not because of the race.
+- Results: `backend-tests` → 250 passed with deprecations as errors; the
+  rebuilt `api` container is healthy.

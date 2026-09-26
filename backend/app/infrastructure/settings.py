@@ -1,6 +1,7 @@
+import re
 from datetime import timedelta
 
-from limits import parse
+from limits import parse_many
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
@@ -53,6 +54,12 @@ class RedisSettings(BaseSettings):
     url: str = Field(pattern=r"^rediss?://")
 
 
+_SINGLE_LIMIT = re.compile(
+    r"\s*[1-9]\d*\s*(?:/|per)\s*(?:[1-9]\d*\s+)?"
+    r"(?:second|minute|hour|day)s?\s*"
+)
+
+
 class RateLimitSettings(BaseSettings):
     """Limits use the `limits` notation, e.g. "5/minute". The storage defaults
     to REDIS_URL. `trusted_proxies` lists the addresses (or CIDR ranges)
@@ -66,9 +73,16 @@ class RateLimitSettings(BaseSettings):
     api: str = "120/minute"
     storage_uri: str | None = None
     trusted_proxies: str = "127.0.0.1"
+    key_prefix: str = Field(default="task-management", pattern=r"^[A-Za-z0-9_-]+$")
 
     @field_validator("login", "api")
     @classmethod
-    def _valid_limit(cls, value: str) -> str:
-        parse(value)  # raises ValueError on bad notation
+    def _single_positive_limit(cls, value: str) -> str:
+        # `limits` silently keeps only the first of "a; b" and rewrites a zero
+        # period ("5/0 seconds") as one, so the notation is checked strictly.
+        if not _SINGLE_LIMIT.fullmatch(value) or len(parse_many(value)) != 1:
+            raise ValueError(
+                "expected one limit with a positive amount and period, "
+                "e.g. '5/minute' or '10/5 seconds'"
+            )
         return value

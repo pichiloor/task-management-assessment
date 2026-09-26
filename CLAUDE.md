@@ -10,8 +10,11 @@ worker and CSV export.
 
 Rate limiting (`app/infrastructure/rate_limiter.py`, `app/api/rate_limits.py`)
 uses the `limits` library directly (slowapi was dropped with the author's
-approval: its decorators bind limits at import time, which does not fit
-per-app settings). Login: `RATE_LIMIT_LOGIN` per client IP; everything under
+approval: integrating its decorator/middleware model with per-app settings
+built in `create_app` was awkward; slowapi does support callable limits and
+`exempt`, so this is a preference, not a hard limitation). Limits must be a
+single positive expression such as `5/minute`. In-memory counting is
+serialized with a lock (limits' MemoryStorage is not safe under threads). Login: `RATE_LIMIT_LOGIN` per client IP; everything under
 `/api/v1`: `RATE_LIMIT_API` per user (IP for missing/invalid tokens). Counters
 in Redis, falling back to process memory for 30 s when Redis fails. The client
 IP comes from X-Forwarded-For only for `RATE_LIMIT_TRUSTED_PROXIES`.

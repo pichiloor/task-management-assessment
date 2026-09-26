@@ -10,7 +10,11 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from app.api.dependencies import utc_now
 from app.api.errors import register_error_handlers
-from app.api.rate_limits import limit_api, register_rate_limit_handler
+from app.api.rate_limits import (
+    RATE_LIMIT_RESPONSE,
+    limit_api,
+    register_rate_limit_handler,
+)
 from app.api.routes import auth as auth_routes
 from app.api.routes import health, tasks, users
 from app.infrastructure.rate_limiter import RateLimiter
@@ -77,7 +81,11 @@ def create_app(
         ProxyHeadersMiddleware,
         trusted_hosts=[h.strip() for h in rate_limit.trusted_proxies.split(",")],
     )
-    v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(limit_api)])
+    v1 = APIRouter(
+        prefix="/api/v1",
+        dependencies=[Depends(limit_api)],
+        responses=RATE_LIMIT_RESPONSE,
+    )
     v1.include_router(auth_routes.router)
     v1.include_router(users.router)
     v1.include_router(tasks.router)

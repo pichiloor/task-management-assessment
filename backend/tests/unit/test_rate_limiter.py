@@ -13,13 +13,18 @@ UNREACHABLE = "redis://127.0.0.1:1/0"
 
 
 class SlowMemoryStorage(MemoryStorage):
-    """Widens the window between the expiry check and the increment, which
-    is where unsynchronized concurrent hits lose counts."""
+    """Mirrors MemoryStorage.get (limits 5.8) with a pause between the expiry
+    check and the removal. Without external locking, a thread that saw "no
+    counter yet" then deletes the counter another thread just created, and
+    both requests are admitted."""
 
     def get(self, key: str) -> int:
-        value = super().get(key)
-        time.sleep(0.05)
-        return value
+        if self.expirations.get(key, 0) <= time.time():
+            time.sleep(0.05)
+            self.storage.pop(key, None)
+            self.expirations.pop(key, None)
+            self.locks.pop(key, None)
+        return int(self.storage.get(key, 0))
 
 
 class BrokenStorage(MemoryStorage):
@@ -118,3 +123,35 @@ class TestSettings:
     @pytest.mark.parametrize("value", ["5/minute", "120 per minute", "10/5 seconds"])
     def test_single_positive_limits_are_accepted(self, value: str) -> None:
         assert RateLimitSettings(storage_uri="memory://", api=value).api == value
+
+
+class FlakyStorage(MemoryStorage):
+    """Fails while `down` is set, then behaves like memory storage."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.down = True
+
+    def incr(self, *args: object, **kwargs: object) -> int:
+        if self.down:
+            raise RedisConnectionError("down")
+        return super().incr(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def test_redis_is_used_again_once_it_recovers() -> None:
+    now = [0.0]
+    flaky = FlakyStorage()
+    limiter = RateLimiter(
+        UNREACHABLE, primary_storage=flaky, retry_primary_after=30, clock=lambda: now[0]
+    )
+    limiter.hit("5/minute", "k")  # fails over to memory
+
+    flaky.down = False
+    now[0] = 10.0
+    limiter.hit("5/minute", "k")
+    assert flaky.storage == {}  # still inside the window: memory only
+
+    now[0] = 31.0
+    limiter.hit("5/minute", "k")
+    limiter.hit("5/minute", "k")
+    assert sum(flaky.storage.values()) == 2  # both counted in the primary
