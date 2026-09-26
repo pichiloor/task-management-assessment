@@ -26,6 +26,10 @@ class InMemoryUserRepository:
     def get(self, user_id: int) -> User | None:
         return self._users.get(user_id)
 
+    def get_by_email(self, email: str) -> User | None:
+        wanted = email.strip().lower()
+        return next((u for u in self._users.values() if u.email == wanted), None)
+
     def list_active(self) -> list[User]:
         return sorted(
             (u for u in self._users.values() if u.is_active), key=lambda u: u.id
@@ -69,3 +73,28 @@ class InMemoryTaskRepository:
         rows.sort(key=lambda t: (t.due_date is None, t.due_date, t.id))
         start = (query.page - 1) * query.page_size
         return [replace(t) for t in rows[start : start + query.page_size]], len(rows)
+
+
+class FakePasswordHasher:
+    """Reversible stand-in for Argon2; records every verification."""
+
+    def __init__(self) -> None:
+        self.verified: list[tuple[str, str]] = []
+
+    def hash(self, password: str) -> str:
+        return "hashed:" + password
+
+    def verify(self, password_hash: str, password: str) -> bool:
+        self.verified.append((password_hash, password))
+        return password_hash == "hashed:" + password  # pragma: allowlist secret
+
+
+class FakeTokenService:
+    """Tokens are "token:<user id>"; anything else is invalid."""
+
+    def issue(self, user_id: int) -> str:
+        return f"token:{user_id}"
+
+    def subject(self, token: str) -> int | None:
+        prefix, _, value = token.partition(":")
+        return int(value) if prefix == "token" and value.isdigit() else None
