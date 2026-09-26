@@ -1,4 +1,4 @@
-# Pending: seed, worker and nginx.
+# Pending: worker and nginx.
 # PostgreSQL and Redis are internal only: no host ports are published.
 name: task-management
 
@@ -35,13 +35,14 @@ services:
       timeout: 3s
       retries: 10
 
-  # One-shot: applies Alembic migrations, then exits.
+  # One-shot: applies Alembic migrations and loads the demo data (idempotent),
+  # then exits. The api waits for it to finish successfully.
   migrate:
     build:
       context: ./backend
       target: runtime
     environment: *database-env
-    command: ["alembic", "upgrade", "head"]
+    command: ["sh", "-c", "alembic upgrade head && python -m app.infrastructure.seed"]
     depends_on:
       db:
         condition: service_healthy
