@@ -164,13 +164,16 @@ class TestList:
     def test_filters_by_status_and_exact_due_date(
         self, client: TestClient, ana: tuple[int, Headers]
     ) -> None:
+        # One decoy per filter: dropping either filter makes the test fail.
         target = create(client, ana[1], due_date="2026-09-28")
-        create(client, ana[1], due_date="2026-09-29")
-        client.patch(
-            f"/api/v1/tasks/{target['id']}",
-            json={"status": "in_progress"},
-            headers=ana[1],
-        )
+        same_status_other_date = create(client, ana[1], due_date="2026-09-29")
+        create(client, ana[1], due_date="2026-09-28")  # same date, still pending
+        for task in (target, same_status_other_date):
+            client.patch(
+                f"/api/v1/tasks/{task['id']}",
+                json={"status": "in_progress"},
+                headers=ana[1],
+            )
 
         response = client.get(
             "/api/v1/tasks?status=in_progress&due_date=2026-09-28", headers=ana[1]

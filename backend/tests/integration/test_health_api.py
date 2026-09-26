@@ -93,7 +93,14 @@ def test_crud_keeps_working_with_redis_down(
 
     with TestClient(app) as client:
         created = client.post("/api/v1/tasks", json={"title": "t"}, headers=headers)
+        url = f"/api/v1/tasks/{created.json()['id']}"
         listed = client.get("/api/v1/tasks", headers=headers)
+        read = client.get(url, headers=headers)
+        patched = client.patch(url, json={"status": "completed"}, headers=headers)
+        deleted = client.delete(url, headers=headers)
 
     assert created.status_code == 201
     assert listed.json()["total"] == 1
+    assert read.status_code == 200
+    assert patched.json()["status"] == "completed"
+    assert deleted.status_code == 204

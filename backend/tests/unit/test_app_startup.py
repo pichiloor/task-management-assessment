@@ -130,3 +130,8 @@ def test_database_connections_have_bounded_waits(
     assert 0 < connect_args["connect_timeout"] <= 5
     assert 0 < connect_args["tcp_user_timeout"] <= 10_000
     assert 0 < kwargs["pool_timeout"] <= 10  # type: ignore[operator]
+    # Server-side bounds for slow queries and lock waits.
+    options = connect_args["options"]
+    assert isinstance(options, str)
+    assert "statement_timeout=" in options
+    assert "lock_timeout=" in options
