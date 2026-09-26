@@ -462,3 +462,19 @@
   both passed without the fix. Rewritten; each now fails 3/3 without its fix.
 - Results: `backend-tests` → 258 passed with deprecations as errors; live in
   the rebuilt `api` container the 6th bad login still returns 429.
+- Third review by Codex (`gpt-6-astra`): the memory counter, probe re-check
+  and grammar were confirmed (it reproduced the 3/3 checks), with two more
+  findings, accepted (tests first in `fbbf001`, 2 failed):
+  - Medium: a request that began while Redis looked healthy could fail after
+    a probe had confirmed recovery and switch the limiter back to memory (or
+    a probe could erase such a failure). Every state change now carries a
+    generation number and is published only if nothing was published since
+    the attempt began. The new test fails 3/3 without the generation check.
+  - Low: the memory counter keyed windows by `str(item)`, which drops the
+    limit's namespace; it now uses `item.key_for(key)` like `limits` does.
+  - Noted, not changed: pruning is O(n) every 1000 hits and expired entries
+    stay until the next prune; documented as a limitation of a per-process
+    fallback. Some tests reach private attributes to force interleavings,
+    which Codex judged acceptable.
+- Results: `backend-tests` → 260 passed with deprecations as errors; live in
+  the rebuilt `api` container the 6th bad login returns 429.

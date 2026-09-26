@@ -5,7 +5,9 @@ process shares them. If Redis stops answering, counting switches to process
 memory for `retry_primary_after` seconds and a warning is logged: limits stay
 enforced (per process) instead of failing open or breaking requests. After
 that window a single request probes Redis again; concurrent requests keep
-using memory meanwhile.
+using memory meanwhile. State changes carry a generation number: an attempt
+publishes its outcome only if no other outcome was published since it began,
+so a slow, stale failure cannot undo a later recovery (or vice versa).
 
 The in-memory counter is our own: `limits`' MemoryStorage checks expiry
 outside its increment lock and deletes keys from a background timer thread,
@@ -39,7 +41,9 @@ class Decision:
 class InMemoryFixedWindow:
     """Thread-safe fixed-window counter: read, reset and increment happen
     under one lock. Expired windows are pruned every `prune_every` hits, in
-    the calling thread (no background threads)."""
+    the calling thread (no background threads). Memory is bounded by the
+    number of distinct keys seen between prunes; expired entries stay until
+    the next prune (a documented limitation for a per-process fallback)."""
 
     def __init__(
         self,
@@ -54,7 +58,7 @@ class InMemoryFixedWindow:
         self._hits_since_prune = 0
 
     def hit(self, item: RateLimitItem, key: str) -> Decision:
-        full_key = f"{item}/{key}"
+        full_key = item.key_for(key)  # includes namespace, amount and period
         with self._lock:
             now = self._clock()
             ends_at, hits = self._windows.get(full_key, (0.0, 0))
@@ -103,54 +107,71 @@ class RateLimiter:
             )
         self._fallback = fallback or InMemoryFixedWindow()
         self._probe_lock = threading.Lock()
+        self._state_lock = threading.Lock()
         self._retry_primary_after = retry_primary_after
         self._clock = clock
         self._primary_down_until = 0.0
+        self._generation = 0
 
     def hit(self, limit: str | RateLimitItem, key: str) -> Decision:
         item = parse(limit) if isinstance(limit, str) else limit
         if self._memory_primary is not None:
             return self._memory_primary.hit(item, key)
-        if self._clock() >= self._primary_down_until:
-            decision = self._try_primary(item, key)
+        with self._state_lock:
+            down_until, generation = self._primary_down_until, self._generation
+        if self._clock() >= down_until:
+            decision = self._try_primary(item, key, down_until, generation)
             if decision is not None:
                 return decision
         return self._fallback.hit(item, key)
 
-    def _try_primary(self, item: RateLimitItem, key: str) -> Decision | None:
+    def _try_primary(
+        self, item: RateLimitItem, key: str, down_until: float, generation: int
+    ) -> Decision | None:
         assert self._primary is not None
-        if self._primary_down_until == 0.0:
-            # Healthy: no coordination needed; a failure starts the backoff.
+        if down_until == 0.0:
+            # Healthy: no probe coordination; a failure starts the backoff.
             try:
                 return _hit(self._primary, item, key)
             except STORAGE_ERRORS as exc:
-                self._mark_down(exc)
+                self._publish(generation, exc)
                 return None
-        # Recovering: one probe at a time, and the outcome is published while
-        # the probe lock is still held.
+        # Recovering: one probe at a time.
         if not self._probe_lock.acquire(blocking=False):
             return None
         try:
-            if self._clock() < self._primary_down_until:
-                return None  # another probe failed meanwhile
+            with self._state_lock:
+                if generation != self._generation or (
+                    self._clock() < self._primary_down_until
+                ):
+                    return None  # another outcome was published meanwhile
             try:
                 decision = _hit(self._primary, item, key)
             except STORAGE_ERRORS as exc:
-                self._mark_down(exc)
+                self._publish(generation, exc)
                 return None
-            self._primary_down_until = 0.0
-            logger.warning("rate limit storage recovered")
+            self._publish(generation, None)
             return decision
         finally:
             self._probe_lock.release()
 
-    def _mark_down(self, exc: Exception) -> None:
-        logger.warning(
-            "rate limit storage unavailable (%s); counting in memory for %.0f s",
-            type(exc).__name__,
-            self._retry_primary_after,
-        )
-        self._primary_down_until = self._clock() + self._retry_primary_after
+    def _publish(self, generation: int, failure: Exception | None) -> None:
+        """Records an attempt's outcome unless a newer one was recorded."""
+        with self._state_lock:
+            if generation != self._generation:
+                return  # stale: something happened after this attempt began
+            self._generation += 1
+            if failure is None:
+                self._primary_down_until = 0.0
+                logger.warning("rate limit storage recovered")
+            else:
+                self._primary_down_until = self._clock() + self._retry_primary_after
+                logger.warning(
+                    "rate limit storage unavailable (%s); counting in memory "
+                    "for %.0f s",
+                    type(failure).__name__,
+                    self._retry_primary_after,
+                )
 
 
 def _storage_from_uri(uri: str) -> Storage:
