@@ -483,3 +483,76 @@
   suggested tests added (concurrent healthy failures publish once; a probe
   with a stale generation does not start) and the pruning docstring made
   precise. 25 rate-limiter unit tests pass.
+
+## Step 9: Celery worker and CSV export (2026-09-26)
+
+- Implemented by Claude (Claude Code, Opus 5.5) at the author's request
+  ("sigue con el paso 9"); every commit reviewed by Codex (`gpt-6-astra`,
+  read-only).
+- Design: `POST /api/v1/exports` (202) commits the export row in its own
+  transaction and only then publishes its ID to Celery; a failed publish
+  marks it failed (`queue_unavailable`) and returns 503. The worker locks the
+  row (`FOR UPDATE`), applies the filters and visibility rules when it runs,
+  writes a formula-safe, UTF-8-with-BOM CSV atomically (temp file +
+  `os.replace`) to a volume shared with the API, and does nothing for an
+  export that is already finished (idempotent under redelivery; `acks_late`).
+  Status and download are requester-only (404 otherwise), 409 while pending
+  or failed, 410 when expired or the file is gone. `RATE_LIMIT_EXPORTS`
+  (5/minute per user) applies to requests. Broker: Redis database 1.
+- Tests were written before the implementation, but they went in the same
+  commit (`996f0b1`): the mypy pre-commit hook checks all of `app/`, so a
+  tests-only commit could not pass with the new modules half-present.
+- Claude's mistakes caught by its own tests: Celery registers tasks as
+  "shared" by default, so a worker app created later in the same process
+  reused the previous app's task (and runner); fixed with `shared=False`
+  and a regression test that fails without it. The export-table test helper
+  inserted a fixed user even when one was passed. A scripted edit of the
+  lost-job test silently did not apply (ruff had reformatted the file); the
+  suite passed with the old test and Claude noticed it from the script's
+  error before committing, then edited it by hand.
+- First review by Codex, four findings, all accepted (`92a35ad`):
+  - High: a retry that could not be published (Redis down) makes Celery
+    drop the message, leaving the export pending forever.
+  - High: if PostgreSQL stayed down, `fail()` also failed, the message was
+    acknowledged and the export stayed pending forever.
+  - High: Redis had no persistence, so accepted jobs could be lost.
+  - Medium: expired CSV files were never deleted.
+  Fix: a `dispatched_at` column and a Celery beat task every minute that
+  republishes exports pending since their last dispatch (2 min,
+  `FOR UPDATE SKIP LOCKED`, so exports being processed are skipped), fails
+  them after 30 min (`export_timed_out`) and deletes expired files; Redis
+  with AOF and a named volume; a `beat` service. Live check: the queued
+  message was deleted from Redis with the worker stopped; beat republished
+  it and the export completed about 2.5 minutes later.
+- Second review, two findings, accepted (`f09a215`): maintenance had
+  `expires` = 60 s on the shared queue, so a backlog discarded every run
+  (now its own `maintenance` queue, read first, no expiry); cleanup used the
+  current TTL instead of each export's stored `expires_at` (now decided per
+  file from the database row). Codex also noted the end-to-end test called
+  maintenance directly; it now sends `exports.maintain` through Redis to a
+  real worker, and fails if the worker does not read that queue.
+- Third review, two findings, accepted (`d14164c`): one `IN (...)` with every
+  file ID breaks beyond the protocol's 65,535 parameters (now batches of
+  1000); a file deleted between validation and `FileResponse` opening it
+  gave a 500 (the route now opens it first, 410 if gone, and streams from
+  the open file; the test fails on the old route with Starlette's
+  `RuntimeError`).
+- Fourth review, one finding, accepted (`701c243`): the file was closed only
+  inside the body generator, which never runs if the client disconnects
+  first. `OpenFileResponse` closes it in a `finally` around the whole ASGI
+  call; ASGI-level tests fail without it. Claude's first version of that
+  test hung: its fake `receive` returned at once, so Starlette's disconnect
+  listener spun forever; it now waits like a connected client.
+- Fifth review: "No encontré nuevos defectos concretos".
+- Results: `backend-tests` → 393 passed, 98.5% coverage, deprecations as
+  errors; includes a real Celery worker consuming from the Compose Redis.
+  Live over HTTP on the rebuilt stack: 202 + Location, 409 while pending,
+  completed in about 0.4 s, CSV download with attachment and `no-store`,
+  404 for another user, 6th request in a minute → 429, Redis stopped → 503
+  in 0.59 s with the export recorded as failed, worker stopped → export
+  stays pending and completes when the worker returns, stale temp file
+  removed by maintenance.
+- Documented limitation: the polling reconciler stands in for a
+  transactional outbox; a lost job is recovered after 2 to 3 minutes, and a
+  queue backlog longer than 2 minutes produces duplicate (harmless, no-op)
+  jobs.

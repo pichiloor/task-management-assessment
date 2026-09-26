@@ -5,8 +5,20 @@
 Steps 1 (tooling), 2 (PostgreSQL and Redis in Compose), 3 (domain rules and
 use cases, TDD), 4 (SQLAlchemy repositories, Alembic) and 5 (JWT login,
 Argon2, auth endpoints) and 6 (task CRUD endpoints, `/api/health`, `api`
-Compose service), 7 (demo seed) and 8 (rate limiting) are done. Next: Celery
-worker and CSV export.
+Compose service), 7 (demo seed), 8 (rate limiting) and 9 (Celery worker and
+CSV export) are done. Next: CI (GitHub Actions).
+
+CSV export (`app/application/exports.py`, `app/infrastructure/worker.py`,
+`worker_main.py`, `export_files.py`, `app/api/routes/exports.py`):
+`POST /api/v1/exports` commits the row, then publishes its ID (503 +
+`queue_unavailable` if the broker is down). The worker locks the row and is
+idempotent. PostgreSQL is the source of truth: Celery beat runs
+`exports.maintain` every minute on the `maintenance` queue (republish
+exports pending 2 min since their last dispatch, fail them after 30 min,
+delete files of expired/failed/missing exports and stale temp files).
+Broker: Redis database 1 (`CELERY_BROKER_URL`), AOF on. Files live in the
+`exports` volume at `/data/exports` (`EXPORT_DIR`, `EXPORT_TTL_HOURS`).
+Tests that build their own app pass `export_queue=FakeExportQueue()`.
 
 Rate limiting (`app/infrastructure/rate_limiter.py`, `app/api/rate_limits.py`)
 uses the `limits` library directly (slowapi was dropped with the author's
@@ -114,7 +126,8 @@ Compose runs `db` (PostgreSQL 16.15) and `redis` (Redis 7.4.11) with
 healthchecks and a named volume for data, plus `migrate` (one-shot Alembic
 and demo seed),
 `api` (uvicorn factory on port 8000, not published yet; healthcheck on
-`/api/health`) and `backend-tests` (profile `test`). The backend Dockerfile has `runtime` and
+`/api/health`), `worker` (Celery, queues `maintenance,celery`), `beat`
+(exactly one) and `backend-tests` (profile `test`). The backend Dockerfile has `runtime` and
 `test` targets and runs as a non-root user. The frontend Dockerfile, nginx and
 application CI are still placeholders.
 
