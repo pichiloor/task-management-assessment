@@ -181,3 +181,27 @@
     it now calls every repository method, including not-found branches.
   - It also corrected this log: the first test commit added 9 unit tests,
     not 11, and they failed at collection rather than as individual tests.
+
+## 2026-09-26 — Step 5: authentication
+
+- Tool: Claude Code (model `claude-opus-5-5`). Three test-first pairs, each red
+  run executed before the implementation:
+  `a8c197b`→`fba6898` (login and token validation use cases, fakes),
+  `1627603`→`e1053f9` (Argon2, HS256 JWT, settings requiring a 32+ character
+  secret), `df8d95e`→(this commit) (FastAPI app, error mapping,
+  `POST /api/v1/auth/token`, `GET /api/v1/users/me`, `GET /api/v1/users`;
+  the red run in Docker failed at collection with `No module named
+  'app.api.app'`).
+- Decisions: login failures return one message and code whether the email is
+  unknown, the password wrong or the user inactive, and an unknown email still
+  runs one hash verification so timing does not reveal registered emails;
+  only HS256 is accepted when decoding (rules out `alg: none` and algorithm
+  confusion); `exp` and `sub` are required; a token stops working as soon as
+  its user is deactivated; the list of assignable users goes through the use
+  case and exposes only `id` and `name`.
+- Starlette warns that `httpx` with its TestClient is deprecated in favor of
+  `httpx2`. Adding a library is outside the approved stack, so the warning is
+  filtered in `pyproject.toml` and the upgrade is left to the author.
+- Actual results: `backend-tests` → 147 passed, 98% coverage. Uncovered:
+  production wiring in `app/api/dependencies.py` (engine, session factory,
+  settings-based token service), which tests replace with overrides.

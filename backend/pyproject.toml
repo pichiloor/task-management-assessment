@@ -80,6 +80,10 @@ forbidden_modules = ["app.api"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+filterwarnings = [
+    # Starlette asks for `httpx2`, which is outside the approved stack.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:DeprecationWarning",
+]
 
 [tool.coverage.run]
 source = ["app"]

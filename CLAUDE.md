@@ -3,8 +3,13 @@
 ## Scope and language
 
 Steps 1 (tooling), 2 (PostgreSQL and Redis in Compose), 3 (domain rules and
-use cases, TDD) and 4 (SQLAlchemy repositories, Alembic) are done. Next: JWT
-authentication and access rules.
+use cases, TDD), 4 (SQLAlchemy repositories, Alembic) and 5 (JWT login,
+Argon2, auth endpoints) are done. Next: task CRUD endpoints.
+
+API layout: `app/api/app.py` (`create_app`), `dependencies.py` (one session and
+transaction per request; tests override `get_session` and `get_token_service`),
+`errors.py` (business errors → `{"detail", "code"}`, 401 adds
+`WWW-Authenticate: Bearer`), `routes/`. Swagger at `/api/docs`.
 Unit tests use the in-memory fakes in `backend/tests/fakes.py`. The author authorized running
 pytest, coverage and frontend tests while implementing this repository.
 Keep code, comments and repository documents in English. Do not add libraries
