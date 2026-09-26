@@ -314,3 +314,37 @@ class TestDelete:
 
         assert client.delete(url, headers=bo[1]).status_code == 403
         assert client.delete(url, headers=cy[1]).status_code == 404
+
+
+class TestOpenApiContract:
+    def test_422_documents_both_error_shapes(self, client: TestClient) -> None:
+        paths = client.get("/api/openapi.json").json()["paths"]
+
+        for path, method in [
+            ("/api/v1/tasks", "post"),
+            ("/api/v1/tasks", "get"),
+            ("/api/v1/tasks/{task_id}", "patch"),
+        ]:
+            schema = paths[path][method]["responses"]["422"]["content"][
+                "application/json"
+            ]["schema"]
+            refs = {option["$ref"].rsplit("/", 1)[-1] for option in schema["anyOf"]}
+            assert refs == {"HTTPValidationError", "ErrorResponse"}, (path, method)
+
+    def test_patch_schema_allows_null_only_where_the_api_does(
+        self, client: TestClient
+    ) -> None:
+        props = client.get("/api/openapi.json").json()["components"]["schemas"][
+            "TaskUpdate"
+        ]["properties"]
+
+        def nullable(prop: dict[str, object]) -> bool:
+            options = prop.get("anyOf", [prop])
+            assert isinstance(options, list)
+            return any(o.get("type") == "null" for o in options)
+
+        assert not nullable(props["title"])
+        assert not nullable(props["description"])
+        assert not nullable(props["status"])
+        assert nullable(props["assignee_id"])
+        assert nullable(props["due_date"])

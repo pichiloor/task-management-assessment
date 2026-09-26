@@ -107,3 +107,26 @@ def test_invalid_redis_url_stops_startup(monkeypatch: pytest.MonkeyPatch) -> Non
 
     with pytest.raises(ValidationError):
         create_app()
+
+
+def test_database_connections_have_bounded_waits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A PostgreSQL server that stops answering must not hang requests forever.
+    monkeypatch.setenv("JWT_SECRET", "k" * 32)
+    calls: list[dict[str, object]] = []
+
+    def fake_create_engine(url: object, **kwargs: object) -> object:
+        calls.append(kwargs)
+        return type("E", (), {"dispose": lambda self: None})()
+
+    monkeypatch.setattr("app.api.app.create_engine", fake_create_engine)
+
+    create_app()
+
+    (kwargs,) = calls
+    connect_args = kwargs["connect_args"]
+    assert isinstance(connect_args, dict)
+    assert 0 < connect_args["connect_timeout"] <= 5
+    assert 0 < connect_args["tcp_user_timeout"] <= 10_000
+    assert 0 < kwargs["pool_timeout"] <= 10  # type: ignore[operator]

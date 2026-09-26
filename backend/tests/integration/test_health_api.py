@@ -2,14 +2,19 @@ from collections.abc import Callable
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Connection
+from sqlalchemy import Connection, event
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.api.app import create_app
+from app.infrastructure.repositories import SqlUserRepository
 from app.infrastructure.settings import AuthSettings
 from tests.fakes import FakeRedis
-from tests.integration.conftest import TEST_JWT_SECRET, savepoint_sessions
+from tests.integration.conftest import (
+    TEST_JWT_SECRET,
+    savepoint_sessions,
+    token_service,
+)
 
 
 def health(
@@ -56,3 +61,39 @@ def test_database_down_is_503(redis_up: bool) -> None:
 def test_health_is_public_and_documented(client: TestClient) -> None:
     assert client.get("/api/health").status_code == 200
     assert "/api/health" in client.get("/api/openapi.json").json()["paths"]
+
+
+def test_database_check_sets_a_statement_timeout(connection: Connection) -> None:
+    statements: list[str] = []
+    event.listen(
+        connection,
+        "before_cursor_execute",
+        lambda conn, cursor, statement, *args: statements.append(statement),
+    )
+
+    health(savepoint_sessions(connection), FakeRedis())
+
+    assert any("statement_timeout" in s for s in statements)
+
+
+def test_crud_keeps_working_with_redis_down(
+    connection: Connection, session: Session
+) -> None:
+    user = SqlUserRepository(session).create(
+        email="r@example.com",
+        name="R",
+        password_hash="h",  # pragma: allowlist secret
+    )
+    app = create_app(
+        auth=AuthSettings(secret=TEST_JWT_SECRET),
+        session_factory=savepoint_sessions(connection),
+        redis=FakeRedis(up=False),
+    )
+    headers = {"Authorization": f"Bearer {token_service().issue(user.id)}"}
+
+    with TestClient(app) as client:
+        created = client.post("/api/v1/tasks", json={"title": "t"}, headers=headers)
+        listed = client.get("/api/v1/tasks", headers=headers)
+
+    assert created.status_code == 201
+    assert listed.json()["total"] == 1
