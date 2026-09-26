@@ -280,3 +280,25 @@ def test_limit_namespaces_are_independent_in_memory() -> None:
 
     assert limiter.hit(first, "k").allowed
     assert limiter.hit(second, "k").allowed
+
+
+def test_concurrent_healthy_failures_start_one_backoff() -> None:
+    broken = BrokenStorage(RedisConnectionError("down"), delay=0.1)
+    limiter = RateLimiter(UNREACHABLE, primary_storage=broken, clock=lambda: 0.0)
+
+    run_concurrently(5, lambda: limiter.hit("100/minute", "k"))
+
+    assert limiter._generation == 1  # one published outcome, the rest stale
+
+
+def test_a_probe_with_a_stale_generation_does_not_start() -> None:
+    now = [0.0]
+    broken = BrokenStorage(RedisConnectionError("down"))
+    limiter = RateLimiter(UNREACHABLE, primary_storage=broken, clock=lambda: now[0])
+    limiter.hit("5/minute", "k")  # generation 1, backoff until 30
+    now[0] = 31.0
+    down_until, generation = limiter._primary_down_until, limiter._generation
+    limiter._publish(generation, RedisConnectionError("newer"))  # generation 2
+
+    assert limiter._try_primary(parse("5/minute"), "k", down_until, generation) is None
+    assert broken.calls == 1

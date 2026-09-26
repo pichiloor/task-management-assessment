@@ -41,9 +41,10 @@ class Decision:
 class InMemoryFixedWindow:
     """Thread-safe fixed-window counter: read, reset and increment happen
     under one lock. Expired windows are pruned every `prune_every` hits, in
-    the calling thread (no background threads). Memory is bounded by the
-    number of distinct keys seen between prunes; expired entries stay until
-    the next prune (a documented limitation for a per-process fallback)."""
+    the calling thread (no background threads). Memory grows with the
+    number of distinct keys whose windows are still open, plus expired
+    entries not yet pruned (a documented limitation of a per-process
+    fallback)."""
 
     def __init__(
         self,

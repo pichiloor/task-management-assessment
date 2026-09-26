@@ -478,3 +478,8 @@
     which Codex judged acceptable.
 - Results: `backend-tests` → 260 passed with deprecations as errors; live in
   the rebuilt `api` container the 6th bad login returns 429.
+- Fourth review by Codex (`gpt-6-astra`): state machine correct for the
+  interleavings reviewed, no lock-order inversion (probe → state only). Two
+  suggested tests added (concurrent healthy failures publish once; a probe
+  with a stale generation does not start) and the pruning docstring made
+  precise. 25 rate-limiter unit tests pass.
