@@ -1,4 +1,4 @@
-# Pending: seed, API, worker and nginx.
+# Pending: seed, worker and nginx.
 # PostgreSQL and Redis are internal only: no host ports are published.
 name: task-management
 
@@ -44,6 +44,36 @@ services:
     command: ["alembic", "upgrade", "head"]
     depends_on:
       db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ./backend
+      target: runtime
+    restart: unless-stopped
+    environment:
+      <<: *database-env
+      JWT_SECRET: ${JWT_SECRET:?Run scripts/setup-env.sh first}
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      REDIS_URL: redis://redis:6379/0
+    command:
+      ["uvicorn", "--factory", "app.api.app:create_app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   # Runs the backend suite against a separate *_test database:

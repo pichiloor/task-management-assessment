@@ -252,3 +252,25 @@
   needs it), and the warning filter was removed from `pyproject.toml`.
 - Checked with deprecations as errors (`-W error::DeprecationWarning`): host
   120 passed, Docker 159 passed, no warnings.
+
+## 2026-09-26 — Step 6: task endpoints and health check
+
+- Tool: Claude Code (model `claude-opus-5-5`). Tests first in `d6fbaf9`; the
+  red run in Docker gave 4 failed and 47 errors (`create_app` had no `redis`
+  parameter and the routes did not exist).
+- Endpoints: `POST /api/v1/tasks` (201 + `Location`), `GET /api/v1/tasks`
+  (filters, page format from the plan), `GET/PATCH/DELETE /api/v1/tasks/{id}`
+  (200/200/204), and public `GET /api/health`. PATCH applies only fields
+  present in the body (`model_fields_set`); `assignee_id` and `due_date`
+  accept null to clear, `title`, `description` and `status` reject null.
+- Health: 503 only when PostgreSQL is down; Redis down gives 200 with
+  `"status": "degraded"`, because the CRUD keeps working without Redis.
+- Fixed while implementing: startup tests needed `REDIS_URL`, and a step-5
+  test that builds its own app needed the fake Redis client.
+- Actual results: `backend-tests` → 197 passed, 99% coverage; host → 122.
+  Manual HTTP smoke test inside the new `api` container, against the real
+  PostgreSQL and Redis (two temporary users, deleted afterwards): health 200,
+  login 200, bad login 401, create 201, filtered list, assignee completes
+  (200) but cannot rename (403 `forbidden_field`) or delete (403), creator
+  deletes (204), no token 401, Swagger 200. With Redis stopped, health was
+  200 `degraded`; with PostgreSQL stopped, 503; both recovered on restart.

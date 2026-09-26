@@ -11,6 +11,7 @@ DB_ENV = {
     "POSTGRES_USER": "app",
     "POSTGRES_PASSWORD": "pw",  # pragma: allowlist secret
     "POSTGRES_DB": "app",
+    "REDIS_URL": "redis://localhost:6379/0",
 }
 
 
@@ -84,3 +85,25 @@ def test_no_engine_is_created_if_setup_fails_first(
         create_app()
 
     assert created == []
+
+
+def test_redis_client_created_by_the_app_is_closed_on_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET", "k" * 32)
+    app = create_app()
+    closed: list[bool] = []
+    monkeypatch.setattr(app.state.owned_redis, "close", lambda: closed.append(True))
+
+    with TestClient(app):
+        assert closed == []
+
+    assert closed == [True]
+
+
+def test_invalid_redis_url_stops_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("JWT_SECRET", "k" * 32)
+    monkeypatch.setenv("REDIS_URL", "http://not-redis")
+
+    with pytest.raises(ValidationError):
+        create_app()

@@ -4,12 +4,13 @@
 
 Steps 1 (tooling), 2 (PostgreSQL and Redis in Compose), 3 (domain rules and
 use cases, TDD), 4 (SQLAlchemy repositories, Alembic) and 5 (JWT login,
-Argon2, auth endpoints) are done. Next: task CRUD endpoints.
+Argon2, auth endpoints) and 6 (task CRUD endpoints, `/api/health`, `api`
+Compose service) are done. Next: demo seed data.
 
 API layout: `app/api/app.py` (`create_app` reads and validates settings at
 startup and keeps the session factory, token service and hasher on
-`app.state`; tests pass `auth=` and `session_factory=` instead of overriding
-dependencies), `dependencies.py` (one transaction per request, closed with
+`app.state`; tests pass `auth=`, `session_factory=` and `redis=` instead of
+overriding dependencies), `dependencies.py` (one transaction per request, closed with
 `scope="function"` before the response is sent),
 `errors.py` (business errors → `{"detail", "code"}`, 401 adds
 `WWW-Authenticate: Bearer`), `routes/`. Swagger at `/api/docs`.
@@ -91,8 +92,9 @@ startup must reject missing secrets. Demo credentials will be public and local.
 Do not expose PostgreSQL or Redis host ports. Use Docker Engine within WSL;
 use `sg docker -c "docker ..."` if needed, never Docker Desktop.
 Compose runs `db` (PostgreSQL 16.15) and `redis` (Redis 7.4.11) with
-healthchecks and a named volume for data, plus `migrate` (one-shot Alembic)
-and `backend-tests` (profile `test`). The backend Dockerfile has `runtime` and
+healthchecks and a named volume for data, plus `migrate` (one-shot Alembic),
+`api` (uvicorn factory on port 8000, not published yet; healthcheck on
+`/api/health`) and `backend-tests` (profile `test`). The backend Dockerfile has `runtime` and
 `test` targets and runs as a non-root user. The frontend Dockerfile, nginx and
 application CI are still placeholders.
 

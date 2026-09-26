@@ -44,3 +44,9 @@ class AuthSettings(BaseSettings):
     @property
     def access_token_ttl(self) -> timedelta:
         return timedelta(minutes=self.access_token_expire_minutes)
+
+
+class RedisSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="REDIS_", hide_input_in_errors=True)
+
+    url: str = Field(pattern=r"^rediss?://")

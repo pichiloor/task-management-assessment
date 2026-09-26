@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.app import create_app
 from app.infrastructure.repositories import SqlUserRepository
 from app.infrastructure.settings import AuthSettings
+from tests.fakes import FakeRedis
 from tests.integration.conftest import (
     TEST_JWT_SECRET,
     savepoint_sessions,
@@ -28,7 +29,11 @@ def failing_commit_client(connection: Connection) -> Iterator[TestClient]:
 
         return session
 
-    app = create_app(auth=AuthSettings(secret=TEST_JWT_SECRET), session_factory=factory)
+    app = create_app(
+        auth=AuthSettings(secret=TEST_JWT_SECRET),
+        session_factory=factory,
+        redis=FakeRedis(),
+    )
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client
 
