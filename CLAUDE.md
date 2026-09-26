@@ -2,8 +2,9 @@
 
 ## Scope and language
 
-Steps 1 (tooling) and 2 (PostgreSQL and Redis in Compose) are done. The next
-milestone is domain rules and use cases with TDD. The author authorized running
+Steps 1 (tooling), 2 (PostgreSQL and Redis in Compose) and 3 (domain rules and
+use cases, TDD) are done. Next: SQLAlchemy models and Alembic migrations.
+Unit tests use the in-memory fakes in `backend/tests/fakes.py`. The author authorized running
 pytest, coverage and frontend tests while implementing this repository.
 Keep code, comments and repository documents in English. Do not add libraries
 outside the approved stack without consulting the author.

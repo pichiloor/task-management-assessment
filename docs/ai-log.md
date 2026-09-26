@@ -61,3 +61,28 @@
   host ports; `docker compose --env-file /dev/null config` fails with the
   setup message; a table survives a `db` restart; running the setup script
   twice leaves `.env` unchanged. No test suites were run (no code yet).
+
+## 2026-09-26 — Step 3: domain rules and use cases (TDD)
+
+- Tool: Claude Code (model `claude-opus-5-5`), working directly in the repository.
+- Three red/green pairs, each test commit made while the suite failed:
+  `204ef03`→`9ec17fc` (task entity), `14c1254`→`a1b0874` (permissions and
+  use cases), `4f8bde4`→`acbf649` (listing filters and pagination).
+- Corrections made during review, all caught before the implementation commit:
+  - Ruff sorted `app` as a third-party import because hooks run from the
+    repository root; the step-1 scaffold lacked `known-first-party = ["app"]`.
+  - `Task.change_status` set `completed_at` before validating that `now` was
+    timezone-aware, so a rejected call could still mutate the task. Validation
+    now happens first.
+  - `TaskService.delete` used `assert task.id is not None`, which disappears
+    under `python -O`; it now deletes by the `task_id` argument instead.
+  - Adding a method named `list` to `TaskService` broke every later
+    `list[...]` annotation in the class body (`TypeError` at import). The
+    tests failed at collection; the method was moved to the end of the class.
+  - detect-secrets flagged the fake `password_hash` in tests; marked with an
+    allowlist pragma after confirming it is not a credential.
+- Coverage after the pairs showed `Task.describe` was never exercised by the
+  creator path; a separate test commit (`4deccc9`) covers it.
+- Actual result: `pytest --cov=app` → 56 passed, 100% line and branch coverage
+  of the domain and application layers (no infrastructure or API code exists
+  yet). mypy strict and all three import-linter contracts pass.
