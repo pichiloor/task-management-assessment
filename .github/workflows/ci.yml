@@ -94,7 +94,8 @@ jobs:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
       TEST_POSTGRES_DB: task_management_test
-      # Database 15 is reserved for tests; each test removes its own keys.
+      # Database 15 is reserved for tests; rate-limit tests remove their keys
+      # and worker tests use unique queue names.
       TEST_REDIS_URL: redis://localhost:6379/15
     defaults:
       run:

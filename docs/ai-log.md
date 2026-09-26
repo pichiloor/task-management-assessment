@@ -583,6 +583,8 @@
   `cache-dependency-glob` relative to its `working-directory`, so
   `backend/uv.lock` matched nothing and the cache key would never change
   with the lockfile (now `uv.lock`; verified in the action's `action.yml`);
-  a comment said tests flush Redis database 15, but each test only removes
-  its own keys (fixed in the workflow and in `docker-compose.yml`, where
-  Claude had copied it from). No other defects found.
+  a comment said tests flush Redis database 15, but they do not (fixed in
+  the workflow and in `docker-compose.yml`, where Claude had copied it from).
+- Second review: Claude's new wording ("each test removes its own keys")
+  still overstated it; rate-limit tests delete their keys, but worker tests
+  only use unique queue names and leave broker keys behind. Reworded.
