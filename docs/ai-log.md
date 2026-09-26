@@ -274,3 +274,25 @@
   (200) but cannot rename (403 `forbidden_field`) or delete (403), creator
   deletes (204), no token 401, Swagger 200. With Redis stopped, health was
   200 `degraded`; with PostgreSQL stopped, 503; both recovered on restart.
+
+## 2026-09-26 — Codex review of step 6
+
+- Reviewer: Codex, model `gpt-6-astra`, read-only. Three defects (none high)
+  and two suggestions, all accepted (tests first in `df65dc3`: 4 failed; the
+  two suggestion tests passed at once because the behavior was already right):
+  - Medium: a PostgreSQL server that stops answering could hang the health
+    check (and any request) with no bound. The engine now sets
+    `connect_timeout`, `tcp_user_timeout` and `pool_timeout`, and the health
+    check sets `SET LOCAL statement_timeout = '2s'`.
+  - Medium: the custom 422 entry replaced FastAPI's documented schema with a
+    bare description. It now documents `anyOf` `HTTPValidationError` and
+    `ErrorResponse`, with an example.
+  - Low: OpenAPI marked PATCH `title`, `description` and `status` as nullable
+    although the API rejects null. The schema now allows null only for
+    `assignee_id` and `due_date`.
+  - Suggestions adopted: the combined filter test now has one decoy per
+    filter, and a test runs the CRUD with Redis down.
+- Claude's own mistake while fixing: a manual `$ref` to `TaskStatus` in the
+  PATCH schema broke OpenAPI generation (`KeyError`); replaced by an inline
+  enum. Results: `backend-tests` → 202 passed; the rebuilt `api` container
+  reports healthy with the new connection parameters.

@@ -15,6 +15,8 @@ Check = Literal["ok", "unavailable"]
 def _database(request: Request) -> Check:
     try:
         with request.app.state.session_factory() as session:
+            # Server-side bound, shorter than the Compose healthcheck timeout.
+            session.execute(text("SET LOCAL statement_timeout = '2s'"))
             session.execute(text("SELECT 1"))
     except Exception as exc:  # any failure means "unavailable"
         logger.warning("health: database check failed: %s", type(exc).__name__)

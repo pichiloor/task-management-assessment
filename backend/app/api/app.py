@@ -70,7 +70,17 @@ def create_app(
     # startup never leaves a pool that the lifespan would not close.
     engine: Engine | None = None
     if database is not None:
-        engine = create_engine(database.url, pool_pre_ping=True)
+        engine = create_engine(
+            database.url,
+            pool_pre_ping=True,
+            pool_timeout=5,  # seconds waiting for a free pooled connection
+            connect_args={
+                "connect_timeout": 3,  # seconds to establish a connection
+                # ms of unacknowledged data before the socket is dropped: a
+                # server that stops answering cannot hang a request forever.
+                "tcp_user_timeout": 5000,
+            },
+        )
         session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     owned_redis: Redis | None = None
     if redis_url is not None:

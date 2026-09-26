@@ -1,7 +1,7 @@
 from datetime import date, datetime
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema, model_validator
 
 from app.domain.task import DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH, TaskStatus
 
@@ -42,9 +42,22 @@ class TaskUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    title: str | None = Field(default=None, min_length=1, max_length=TITLE_MAX_LENGTH)
-    description: str | None = Field(default=None, max_length=DESCRIPTION_MAX_LENGTH)
-    status: TaskStatus | None = None
+    # Typed as optional so "omitted" is representable, but documented without
+    # null: the validator below rejects an explicit null for these three.
+    title: Annotated[
+        str | None,
+        WithJsonSchema(
+            {"type": "string", "minLength": 1, "maxLength": TITLE_MAX_LENGTH}
+        ),
+    ] = Field(default=None, min_length=1, max_length=TITLE_MAX_LENGTH)
+    description: Annotated[
+        str | None,
+        WithJsonSchema({"type": "string", "maxLength": DESCRIPTION_MAX_LENGTH}),
+    ] = Field(default=None, max_length=DESCRIPTION_MAX_LENGTH)
+    status: Annotated[
+        TaskStatus | None,
+        WithJsonSchema({"type": "string", "enum": [s.value for s in TaskStatus]}),
+    ] = None
     assignee_id: int | None = None
     due_date: date | None = None
 

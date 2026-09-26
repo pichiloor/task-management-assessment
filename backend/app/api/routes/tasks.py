@@ -28,7 +28,30 @@ _NOT_FOUND: Responses = {
 _FORBIDDEN: Responses = {
     403: {"model": ErrorResponse, "description": "Not allowed for this user"}
 }
-_INVALID: Responses = {422: {"description": "Validation or business-rule error"}}
+# FastAPI's own 422 (request validation) or a business-rule error.
+_INVALID: Responses = {
+    422: {
+        "description": "Request validation error or business-rule violation",
+        "content": {
+            "application/json": {
+                "schema": {
+                    "anyOf": [
+                        {"$ref": "#/components/schemas/HTTPValidationError"},
+                        {"$ref": "#/components/schemas/ErrorResponse"},
+                    ]
+                },
+                "examples": {
+                    "business_rule": {
+                        "value": {
+                            "detail": "Title is required",
+                            "code": "title_required",
+                        }
+                    }
+                },
+            }
+        },
+    }
+}
 
 
 @router.post(
