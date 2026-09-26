@@ -21,7 +21,7 @@ import random
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta, timezone
 
-from sqlalchemy import create_engine, func, insert, select
+from sqlalchemy import create_engine, func, insert, select, tuple_
 from sqlalchemy.orm import Session
 
 from app.application.ports import PasswordHasher
@@ -178,12 +178,17 @@ def seed_demo_data(
     session.execute(select(func.pg_advisory_xact_lock(SEED_LOCK_KEY)))
     ids = _ensure_users(session, hasher, reset=reset_users)
 
-    # A curated task is identified by its creator and title, so a user's own
-    # tasks never block the demo and deleted demo tasks come back.
+    # A curated task is identified by its creator and title: deleted or renamed
+    # demo tasks come back, and a user's own task only suppresses a demo task
+    # if it has the same creator and title. Only the 26 demo keys are read, so
+    # the cost does not grow with --bulk rows.
+    wanted = {(ids[spec.creator], spec.title) for spec in CURATED + BACKLOG}
     existing: set[tuple[int, str]] = {
         (creator_id, title)
         for creator_id, title in session.execute(
-            select(TaskRow.creator_id, TaskRow.title).where(TaskRow.creator_id.in_(ids))
+            select(TaskRow.creator_id, TaskRow.title)
+            .where(tuple_(TaskRow.creator_id, TaskRow.title).in_(wanted))
+            .distinct()
         )
     }
     now = datetime.now(UTC)

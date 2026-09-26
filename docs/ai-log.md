@@ -338,7 +338,7 @@
 ## 2026-09-26 — Codex review of step 7
 
 - Reviewer: Codex, model `gpt-6-astra`, read-only. Three medium defects, one
-  weak test and three suggestions, all accepted (tests first in `c7e2aa7`):
+  weak test and four suggestions, all accepted (tests first in `c7e2aa7`):
   - Concurrent runs could both insert the demo (52 tasks) or collide on the
     unique email. The seed now takes a PostgreSQL advisory transaction lock;
     a test holds the lock from another connection and expects a lock timeout.
@@ -348,7 +348,8 @@
     reactivates it and restores the published password.
   - Any task by a demo user suppressed the whole demo, and deleted demo tasks
     never came back. Demo tasks are now matched by creator and title and
-    recreated when missing; a user's own tasks no longer block anything.
+    recreated when missing; a user's own task only suppresses a demo task
+    with the same creator and title (see the follow-up below).
   - Weak test: the date test passed even if `today` was ignored. It now pins
     exact offsets (−1, 0, +21, none) for three different `today` values.
   - Suggestions: the seed requires `SEED_DEMO_DATA=true` (set only by the
@@ -363,3 +364,14 @@
   Manually on the dev database: the seed refuses without `SEED_DEMO_DATA`;
   with Ana deactivated it exits 1 with the message above; with
   `--reset-demo-users` Ana is active again; a normal run creates 0 tasks.
+- Follow-up review by Codex (`gpt-6-astra`): fixes correct, no regressions,
+  three remaining points, accepted (tests first in the next commit, 1 failed):
+  - Medium: the lock test only expected some `OperationalError`. It now checks
+    SQLSTATE `55P03` on the lock statement, and a second test asserts the lock
+    is the first statement the seed executes.
+  - Low: every run read all task titles of the demo users, growing with
+    `--bulk`. It now queries only the 26 expected (creator, title) keys.
+  - Low: the "own tasks no longer block anything" wording above was too
+    absolute and the suggestion count was wrong; both corrected. A test now
+    pins that a renamed demo task is recreated under its original title.
+  - Results: `backend-tests` → 224 passed with deprecations as errors.
