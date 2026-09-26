@@ -64,3 +64,23 @@ def test_injected_session_factory_is_left_to_its_owner(
         pass
 
     assert app.state.engine is None
+
+
+def test_no_engine_is_created_if_setup_fails_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET", "k" * 32)
+    created: list[object] = []
+    monkeypatch.setattr("app.api.app.create_engine", lambda *a, **k: created.append(a))
+
+    def broken_hash(self: object, password: str) -> str:
+        raise RuntimeError("hashing unavailable")
+
+    monkeypatch.setattr(
+        "app.infrastructure.security.Argon2PasswordHasher.hash", broken_hash
+    )
+
+    with pytest.raises(RuntimeError):
+        create_app()
+
+    assert created == []
