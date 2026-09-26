@@ -243,3 +243,12 @@
   created after settings validation, hashing and route setup; only the
   session factory and `app.state` assignments follow it (test first in `42d28a2`,
   1 failed). Results: Docker 159 passed; host 120 passed.
+
+## 2026-09-26 — Switch the test HTTP client to httpx2
+
+- Decision by the author: add `httpx2` instead of silencing Starlette's
+  deprecation warning. `httpx2==2.13.1` replaces `httpx` in the dev group
+  (nothing imports `httpx` directly; `uv remove` confirmed no other package
+  needs it), and the warning filter was removed from `pyproject.toml`.
+- Checked with deprecations as errors (`-W error::DeprecationWarning`): host
+  120 passed, Docker 159 passed, no warnings.
