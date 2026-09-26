@@ -7,13 +7,18 @@ every test runs inside a transaction that is rolled back afterwards.
 
 import os
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from alembic import command
+from fastapi.testclient import TestClient
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session
 
+from app.api.app import create_app
+from app.api.dependencies import get_session, get_token_service
+from app.infrastructure.security import JwtTokenService
 from tests.support.database import alembic_config, integration_database_url
 
 if not os.environ.get("TEST_POSTGRES_DB"):
@@ -58,3 +63,24 @@ def session(connection: Connection) -> Iterator[Session]:
     # transaction, so the rollback above still discards everything.
     with Session(bind=connection, join_transaction_mode="create_savepoint") as s:
         yield s
+
+
+TEST_JWT_SECRET = "test-secret-" + "x" * 32  # pragma: allowlist secret
+
+
+def token_service(now: datetime | None = None) -> JwtTokenService:
+    return JwtTokenService(
+        secret=TEST_JWT_SECRET,
+        ttl=timedelta(minutes=60),
+        clock=(lambda: now) if now else (lambda: datetime.now(UTC)),
+    )
+
+
+@pytest.fixture
+def client(session: Session) -> Iterator[TestClient]:
+    """API client whose requests share the test transaction."""
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: session
+    app.dependency_overrides[get_token_service] = token_service
+    with TestClient(app) as test_client:
+        yield test_client
