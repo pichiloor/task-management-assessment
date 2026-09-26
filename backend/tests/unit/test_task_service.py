@@ -98,6 +98,18 @@ class TestUpdateByCreator:
         assert task.due_date == date(2026, 10, 1)
         assert task.assignee_id == ASSIGNEE
 
+    def test_description_can_be_edited_and_emptied(self, service: TaskService) -> None:
+        task_id = create(service, description="old")
+
+        assert (
+            service.update(CREATOR, task_id, TaskChanges(description="new")).description
+            == "new"
+        )
+        assert (
+            service.update(CREATOR, task_id, TaskChanges(description="")).description
+            == ""
+        )
+
     def test_explicit_none_clears_assignee_and_due_date(
         self, service: TaskService
     ) -> None:
