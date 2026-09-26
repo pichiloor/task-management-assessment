@@ -1,14 +1,21 @@
 from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import Engine, func, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.domain.task import TaskStatus
 from app.infrastructure.models import TaskRow, UserRow
 from app.infrastructure.repositories import SqlUserRepository
 from app.infrastructure.security import Argon2PasswordHasher
-from app.infrastructure.seed import DEMO_PASSWORD, DEMO_USERS, seed_demo_data
+from app.infrastructure.seed import (
+    DEMO_PASSWORD,
+    DEMO_USERS,
+    SEED_LOCK_KEY,
+    DemoUserConflictError,
+    seed_demo_data,
+)
 
 TODAY = date(2026, 9, 28)
 
@@ -98,24 +105,29 @@ def test_bulk_option_adds_exactly_that_many_tasks(session: Session, bulk: int) -
     seed(session)
     base = count_tasks(session)
     session.rollback()  # discard, start again from an empty schema
+    assert count_tasks(session) == 0
+    assert demo_user_ids(session) == []
 
     seed(session, bulk=bulk)
 
     assert count_tasks(session) == base + bulk
 
 
-def test_due_dates_are_relative_to_today(session: Session) -> None:
-    seed_demo_data(
-        session, Argon2PasswordHasher(), today=TODAY + timedelta(days=30), bulk=0
-    )
+@pytest.mark.parametrize("shift", [-400, 0, 30])
+def test_due_dates_are_exact_offsets_from_the_given_today(
+    session: Session, shift: int
+) -> None:
+    today = TODAY + timedelta(days=shift)
+    seed_demo_data(session, Argon2PasswordHasher(), today=today, bulk=0)
     session.flush()
 
-    overdue = session.scalar(
-        select(func.count())
-        .select_from(TaskRow)
-        .where(TaskRow.due_date < TODAY + timedelta(days=30))
-    )
-    assert overdue
+    def due(title: str) -> date | None:
+        return session.scalar(select(TaskRow.due_date).where(TaskRow.title == title))
+
+    assert due("Renew SSL certificate") == today - timedelta(days=1)
+    assert due("Update onboarding guide") == today
+    assert due("Plan team offsite") == today + timedelta(days=21)
+    assert due("Research caching options") is None
 
 
 def test_bulk_on_an_already_seeded_database_still_adds_tasks(
@@ -129,3 +141,72 @@ def test_bulk_on_an_already_seeded_database_still_adds_tasks(
     seed(session, bulk=100)
 
     assert count_tasks(session) == base + 100
+
+
+def test_deleted_demo_tasks_are_restored_on_the_next_run(session: Session) -> None:
+    seed(session)
+    base = count_tasks(session)
+    session.execute(
+        TaskRow.__table__.delete().where(TaskRow.title == "Plan team offsite")
+    )
+
+    seed(session)
+
+    assert count_tasks(session) == base
+
+
+def test_a_demo_users_own_task_does_not_block_the_demo(session: Session) -> None:
+    hashed = Argon2PasswordHasher().hash(DEMO_PASSWORD)
+    ana = SqlUserRepository(session).create(
+        email=DEMO_USERS[0].email, name="Ana", password_hash=hashed
+    )
+    session.execute(
+        text(
+            "INSERT INTO tasks (title, status, creator_id, created_at, updated_at) "
+            "VALUES ('Mine', 'pending', :id, now(), now())"
+        ),
+        {"id": ana.id},
+    )
+
+    seed(session)
+
+    titles = set(session.scalars(select(TaskRow.title)))
+    assert {"Mine", "Plan team offsite", "Backlog item 01"} <= titles
+
+
+@pytest.mark.parametrize(
+    ("active", "password"),
+    [(False, DEMO_PASSWORD), (True, "someone-changed-it")],
+)
+def test_modified_demo_user_is_reported_not_silently_used(
+    session: Session, active: bool, password: str
+) -> None:
+    hasher = Argon2PasswordHasher()
+    SqlUserRepository(session).create(
+        email=DEMO_USERS[0].email,
+        name="Ana",
+        password_hash=hasher.hash(password),
+        is_active=active,
+    )
+
+    with pytest.raises(DemoUserConflictError) as exc:
+        seed_demo_data(session, hasher, today=TODAY)
+    assert DEMO_USERS[0].email in str(exc.value)
+
+    seed_demo_data(session, hasher, today=TODAY, reset_users=True)
+    session.flush()
+    ana = SqlUserRepository(session).get_by_email(DEMO_USERS[0].email)
+    assert ana is not None and ana.is_active
+    assert hasher.verify(ana.password_hash, DEMO_PASSWORD)
+
+
+def test_concurrent_runs_are_serialized_by_a_lock(
+    engine: Engine, session: Session
+) -> None:
+    with engine.connect() as other:
+        other.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": SEED_LOCK_KEY})
+        session.execute(text("SET LOCAL lock_timeout = '200ms'"))
+
+        with pytest.raises(OperationalError):
+            seed(session)
+        other.rollback()
