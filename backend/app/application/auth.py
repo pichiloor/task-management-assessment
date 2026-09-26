@@ -5,14 +5,20 @@ from app.domain.user import User
 
 class AuthService:
     def __init__(
-        self, *, users: UserRepository, hasher: PasswordHasher, tokens: TokenService
+        self,
+        *,
+        users: UserRepository,
+        hasher: PasswordHasher,
+        tokens: TokenService,
+        dummy_hash: str,
     ) -> None:
+        """`dummy_hash` is verified against when the email is unknown, to
+        reduce the timing difference that would reveal registered emails.
+        Compute it once per process: hashing is deliberately expensive."""
         self._users = users
         self._hasher = hasher
         self._tokens = tokens
-        # Verified against when the email is unknown, so that the response
-        # time does not reveal which emails are registered.
-        self._dummy_hash = hasher.hash("timing-equalizer")
+        self._dummy_hash = dummy_hash
 
     def login(self, email: str, password: str) -> str:
         user = self._users.get_by_email(email)

@@ -1,5 +1,4 @@
 from datetime import timedelta
-from functools import lru_cache
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -9,7 +8,7 @@ from sqlalchemy import URL
 class DatabaseSettings(BaseSettings):
     """Read from environment variables (see .env.example)."""
 
-    model_config = SettingsConfigDict(env_prefix="POSTGRES_")
+    model_config = SettingsConfigDict(env_prefix="POSTGRES_", hide_input_in_errors=True)
 
     user: str
     password: str
@@ -29,15 +28,11 @@ class DatabaseSettings(BaseSettings):
         )
 
 
-@lru_cache
-def database_settings() -> DatabaseSettings:
-    return DatabaseSettings()
-
-
 class AuthSettings(BaseSettings):
-    """The secret has no default: startup fails if it is missing or short."""
+    """The secret has no default: create_app fails if it is missing or short.
+    Invalid input is never echoed in the validation error."""
 
-    model_config = SettingsConfigDict(env_prefix="JWT_")
+    model_config = SettingsConfigDict(env_prefix="JWT_", hide_input_in_errors=True)
 
     secret: SecretStr = Field(min_length=32)
     access_token_expire_minutes: int = Field(default=60, gt=0, le=24 * 60)
@@ -49,8 +44,3 @@ class AuthSettings(BaseSettings):
     @property
     def access_token_ttl(self) -> timedelta:
         return timedelta(minutes=self.access_token_expire_minutes)
-
-
-@lru_cache
-def auth_settings() -> AuthSettings:
-    return AuthSettings()

@@ -1,16 +1,13 @@
-"""Request-scoped wiring: one database session and transaction per request,
-and the services built on top of it. Tests override get_session and
-get_token_service."""
+"""Request-scoped wiring. Process-wide objects (session factory, token service,
+password hasher) live on `app.state`, set up by `create_app`."""
 
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import Engine, create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from app.application.auth import AuthService
 from app.application.ports import TokenService
@@ -18,8 +15,6 @@ from app.application.tasks import TaskService
 from app.domain.errors import AuthenticationError
 from app.domain.user import User
 from app.infrastructure.repositories import SqlTaskRepository, SqlUserRepository
-from app.infrastructure.security import Argon2PasswordHasher, JwtTokenService
-from app.infrastructure.settings import auth_settings, database_settings
 
 TOKEN_URL = "/api/v1/auth/token"
 
@@ -30,45 +25,32 @@ def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-@lru_cache
-def _engine() -> Engine:
-    return create_engine(database_settings().url, pool_pre_ping=True)
-
-
-@lru_cache
-def _session_factory() -> sessionmaker[Session]:
-    return sessionmaker(bind=_engine(), expire_on_commit=False)
-
-
-def get_session() -> Iterator[Session]:
-    """Commits when the request succeeds, rolls back on any exception."""
-    with _session_factory()() as session, session.begin():
+def get_session(request: Request) -> Iterator[Session]:
+    """One transaction per request: commits on success, rolls back on error."""
+    with request.app.state.session_factory() as session, session.begin():
         yield session
 
 
-@lru_cache
-def _hasher() -> Argon2PasswordHasher:
-    return Argon2PasswordHasher()
+# scope="function" ends the transaction before the response is sent, so a
+# failed commit becomes a 500 instead of following an already-sent 200.
+SessionDep = Annotated[Session, Depends(get_session, scope="function")]
 
 
-def get_token_service() -> TokenService:
-    settings = auth_settings()
-    return JwtTokenService(
-        secret=settings.jwt_secret.get_secret_value(),
-        ttl=settings.access_token_ttl,
-        clock=utc_now,
-    )
-
-
-SessionDep = Annotated[Session, Depends(get_session)]
+def get_token_service(request: Request) -> TokenService:
+    tokens: TokenService = request.app.state.tokens
+    return tokens
 
 
 def get_auth_service(
+    request: Request,
     session: SessionDep,
     tokens: Annotated[TokenService, Depends(get_token_service)],
 ) -> AuthService:
     return AuthService(
-        users=SqlUserRepository(session), hasher=_hasher(), tokens=tokens
+        users=SqlUserRepository(session),
+        hasher=request.app.state.hasher,
+        tokens=tokens,
+        dummy_hash=request.app.state.dummy_hash,
     )
 
 

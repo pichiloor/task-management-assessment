@@ -194,7 +194,8 @@
   'app.api.app'`).
 - Decisions: login failures return one message and code whether the email is
   unknown, the password wrong or the user inactive, and an unknown email still
-  runs one hash verification so timing does not reveal registered emails;
+  runs one hash verification to reduce the timing difference (a mitigation:
+  the test counts verifications, it does not measure timing);
   only HS256 is accepted when decoding (rules out `alg: none` and algorithm
   confusion); `exp` and `sub` are required; a token stops working as soon as
   its user is deactivated; the list of assignable users goes through the use
@@ -205,3 +206,29 @@
 - Actual results: `backend-tests` → 147 passed, 98% coverage. Uncovered:
   production wiring in `app/api/dependencies.py` (engine, session factory,
   settings-based token service), which tests replace with overrides.
+
+## 2026-09-26 — Codex review of step 5
+
+- Reviewer: Codex, model `gpt-6-astra`, read-only. Four medium defects and two
+  suggestions, all accepted (tests first in `4ed95eb`: 6 failed and 12
+  errored; fixes after):
+  - The request transaction committed after the response was sent, so a
+    failed commit could follow a 200. `get_session` now uses
+    `Depends(..., scope="function")`. The new test fails with `200 == 500`
+    when the scope is reverted (checked by hand).
+  - The app started without `JWT_SECRET` and failed later with a 500 on the
+    first login. `create_app` now reads and validates settings at startup.
+  - A rejected secret was echoed in the validation error text, which could
+    reach server logs. Both settings classes set `hide_input_in_errors`.
+  - `AuthService` hashed a dummy password on every request, including plain
+    token checks: about 64 MiB of Argon2 work per request, a denial-of-service
+    lever. The dummy hash is now computed once in `create_app` and injected.
+  - Suggestion: a signed token with a 4301-digit `sub` made `int()` raise.
+    Subjects are now limited to 10 digits and to PostgreSQL's integer range.
+  - Suggestion: this log overstated the timing protection; reworded above.
+- Design change that came with the fixes: tests no longer override
+  `get_session`; they give `create_app` a session factory bound to the test
+  transaction, so the real commit/rollback code is exercised
+  (`app/api/dependencies.py` is now fully covered).
+- Actual results: `backend-tests` → 156 passed, 99% coverage; host → 117
+  passed; mypy strict and import contracts pass.

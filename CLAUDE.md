@@ -6,8 +6,11 @@ Steps 1 (tooling), 2 (PostgreSQL and Redis in Compose), 3 (domain rules and
 use cases, TDD), 4 (SQLAlchemy repositories, Alembic) and 5 (JWT login,
 Argon2, auth endpoints) are done. Next: task CRUD endpoints.
 
-API layout: `app/api/app.py` (`create_app`), `dependencies.py` (one session and
-transaction per request; tests override `get_session` and `get_token_service`),
+API layout: `app/api/app.py` (`create_app` reads and validates settings at
+startup and keeps the session factory, token service and hasher on
+`app.state`; tests pass `auth=` and `session_factory=` instead of overriding
+dependencies), `dependencies.py` (one transaction per request, closed with
+`scope="function"` before the response is sent),
 `errors.py` (business errors → `{"detail", "code"}`, 401 adds
 `WWW-Authenticate: Bearer`), `routes/`. Swagger at `/api/docs`.
 Unit tests use the in-memory fakes in `backend/tests/fakes.py`. The author authorized running

@@ -6,6 +6,7 @@ from argon2 import PasswordHasher as _Argon2
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
 _ALGORITHM = "HS256"
+_MAX_USER_ID = 2**31 - 1  # PostgreSQL integer primary key
 
 
 class Argon2PasswordHasher:
@@ -51,6 +52,8 @@ class JwtTokenService:
         except jwt.InvalidTokenError:
             return None
         sub = claims["sub"]
-        if not isinstance(sub, str) or not sub.isdecimal():
+        # Length check first: int() on thousands of digits raises ValueError.
+        if not isinstance(sub, str) or not sub.isdecimal() or len(sub) > 10:
             return None
-        return int(sub)
+        user_id = int(sub)
+        return user_id if 1 <= user_id <= _MAX_USER_ID else None

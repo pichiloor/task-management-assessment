@@ -4,7 +4,7 @@ from alembic import context
 from sqlalchemy import URL, create_engine
 
 from app.infrastructure.models import Base
-from app.infrastructure.settings import database_settings
+from app.infrastructure.settings import DatabaseSettings
 
 config = context.config
 if config.config_file_name is not None and config.attributes.get(
@@ -18,7 +18,7 @@ def _url() -> URL:
     override = config.attributes.get("url")
     if isinstance(override, URL):
         return override
-    return database_settings().url
+    return DatabaseSettings().url
 
 
 def run_migrations_offline() -> None:
