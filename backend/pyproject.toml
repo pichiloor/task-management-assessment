@@ -1,0 +1,87 @@
+[project]
+name = "task-management-backend"
+version = "0.1.0"
+description = "Task management assessment backend scaffold"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "alembic==1.20.0",
+    "argon2-cffi==25.1.0",
+    "celery[redis]==5.6.3",
+    "fastapi==0.141.1",
+    "psycopg[binary]==3.3.6",
+    "pydantic==2.13.5",
+    "pydantic-settings==2.15.0",
+    "pyjwt==2.15.0",
+    "python-multipart==0.0.32",
+    "redis==6.4.0",
+    "slowapi==0.1.10",
+    "sqlalchemy==2.1.1",
+    "uvicorn==0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "detect-secrets==1.5.0",
+    "httpx==0.28.1",
+    "import-linter==2.15",
+    "mypy==2.3.1",
+    "pre-commit==4.6.2",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "ruff==0.16.9",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["app"]
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Inner layers are independent of frameworks and infrastructure"
+type = "forbidden"
+source_modules = ["app.domain", "app.application"]
+forbidden_modules = ["fastapi", "sqlalchemy", "celery", "app.infrastructure"]
+
+[[tool.importlinter.contracts]]
+name = "Domain does not depend on application or HTTP handlers"
+type = "forbidden"
+source_modules = ["app.domain"]
+forbidden_modules = ["app.application", "app.api"]
+
+[[tool.importlinter.contracts]]
+name = "Application does not depend on HTTP handlers"
+type = "forbidden"
+source_modules = ["app.application"]
+forbidden_modules = ["app.api"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

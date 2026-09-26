@@ -1,0 +1,15 @@
+name: Quality scaffold
+
+# Manual only during step 1; application CI and service containers come later.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain current scope
+        run: echo 'Step 1 scaffold only. Application CI is pending.'

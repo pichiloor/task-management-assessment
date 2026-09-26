@@ -1,0 +1,49 @@
+minimum_pre_commit_version: "4.0.0"
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      - id: detect-private-key
+  - repo: local
+    hooks:
+      - id: ruff
+        name: Ruff lint (locked uv environment)
+        entry: uv run --project backend --locked ruff check --fix
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: Ruff format (locked uv environment)
+        entry: uv run --project backend --locked ruff format
+        language: system
+        types_or: [python, pyi]
+      - id: mypy
+        name: mypy strict
+        entry: bash -c 'cd backend && uv run --locked mypy'
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: import-linter
+        name: Clean Architecture import contracts
+        entry: bash -c 'cd backend && uv run --locked lint-imports'
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: detect-secrets
+        name: Detect secrets
+        entry: uv run --project backend --locked detect-secrets-hook
+        language: system
+        exclude: (^|/)(uv\.lock|package-lock\.json)$
+      - id: eslint
+        name: ESLint
+        entry: npm --prefix frontend run lint --
+        language: system
+        pass_filenames: false
+        always_run: true
