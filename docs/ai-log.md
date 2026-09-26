@@ -238,3 +238,7 @@
   lifespan now disposes it on shutdown, leaving injected session factories
   to their owner (tests first in `1b90e76`, 2 failed). Results: Docker 158
   passed; host 119 passed.
+- Second follow-up: Codex noted the engine could still leak if `create_app`
+  failed after creating it (for example while hashing). The engine is now
+  created last, after everything that can fail (test first in `42d28a2`,
+  1 failed). Results: Docker 159 passed; host 120 passed.

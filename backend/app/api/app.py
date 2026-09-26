@@ -22,10 +22,14 @@ def create_app(
     or weak JWT secret stops the process at startup. Tests pass their own
     settings and session factory."""
     auth = auth or AuthSettings()
-    engine: Engine | None = None
-    if session_factory is None:
-        engine = create_engine(DatabaseSettings().url, pool_pre_ping=True)
-        session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    database = DatabaseSettings() if session_factory is None else None
+    hasher = Argon2PasswordHasher()
+    dummy_hash = hasher.hash("timing-equalizer")
+    tokens = JwtTokenService(
+        secret=auth.jwt_secret.get_secret_value(),
+        ttl=auth.access_token_ttl,
+        clock=utc_now,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -44,20 +48,21 @@ def create_app(
         openapi_url="/api/openapi.json",
         redoc_url=None,
     )
-    hasher = Argon2PasswordHasher()
-    app.state.engine = engine
-    app.state.session_factory = session_factory
-    app.state.hasher = hasher
-    app.state.dummy_hash = hasher.hash("timing-equalizer")
-    app.state.tokens = JwtTokenService(
-        secret=auth.jwt_secret.get_secret_value(),
-        ttl=auth.access_token_ttl,
-        clock=utc_now,
-    )
     register_error_handlers(app)
-
     v1 = APIRouter(prefix="/api/v1")
     v1.include_router(auth_routes.router)
     v1.include_router(users.router)
     app.include_router(v1)
+
+    # The engine is created last, once nothing else can fail, so a failed
+    # startup never leaves an engine that the lifespan would not dispose.
+    engine: Engine | None = None
+    if database is not None:
+        engine = create_engine(database.url, pool_pre_ping=True)
+        session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    app.state.engine = engine
+    app.state.session_factory = session_factory
+    app.state.hasher = hasher
+    app.state.dummy_hash = dummy_hash
+    app.state.tokens = tokens
     return app
