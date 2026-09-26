@@ -2,9 +2,11 @@
 assessment asks for demo credentials) and must never be used outside a local
 environment.
 
-Idempotent: users are created only if their email is missing, and tasks only
-if no demo user has created any yet. Due dates are relative to `today`, so the
-demo always has overdue, current and future tasks.
+Idempotent: users are created only if their email is missing, and the curated
+tasks only if no demo user has created any yet. `--bulk N` is an explicit
+request and always adds N random tasks, even on an already-seeded database.
+Due dates are relative to `today`, so the demo always has overdue, current and
+future tasks.
 
     python -m app.infrastructure.seed            # demo users and tasks
     python -m app.infrastructure.seed --bulk 5000  # plus N random tasks
@@ -139,21 +141,19 @@ def _bulk_rows(
 def seed_demo_data(
     session: Session, hasher: PasswordHasher, *, today: date, bulk: int = 0
 ) -> bool:
-    """Returns True if tasks were created, False if the demo was already there."""
+    """Returns True if the curated demo tasks were created by this call."""
     ids = _ensure_users(session, hasher)
     already_seeded = session.scalar(
         select(func.count()).select_from(TaskRow).where(TaskRow.creator_id.in_(ids))
     )
-    if already_seeded:
-        return False
-
     now = datetime.now(UTC)
-    tasks = SqlTaskRepository(session)
-    for spec in CURATED + BACKLOG:
-        tasks.add(_build(spec, ids, today, now))
+    if not already_seeded:
+        tasks = SqlTaskRepository(session)
+        for spec in CURATED + BACKLOG:
+            tasks.add(_build(spec, ids, today, now))
     if bulk:
         session.execute(insert(TaskRow), _bulk_rows(bulk, ids, today, now))
-    return True
+    return not already_seeded
 
 
 def main() -> None:
@@ -174,7 +174,8 @@ def main() -> None:
     engine.dispose()
     users = ", ".join(u.email for u in DEMO_USERS)
     state = "created" if created else "already present, left unchanged"
-    print(f"Demo data {state}. Users: {users} (password: {DEMO_PASSWORD})")
+    extra = f" Added {args.bulk} bulk tasks." if args.bulk else ""
+    print(f"Demo data {state}.{extra} Users: {users} (password: {DEMO_PASSWORD})")
 
 
 if __name__ == "__main__":

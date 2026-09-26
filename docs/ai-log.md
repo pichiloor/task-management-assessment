@@ -312,3 +312,25 @@
   - Tests first in `42704e6` (1 failed: the missing timeout options).
     Results: `backend-tests` → 202 passed; in the running `api` container
     `SHOW statement_timeout` and `lock_timeout` return 10s and 5s.
+
+## 2026-09-26 — Step 7: demo seed
+
+- Tool: Claude Code (model `claude-opus-5-5`). Tests first in `6c99b70` (red:
+  `No module named 'app.infrastructure.seed'`), implementation in `de145ef`.
+- Design: three demo users with one public password; 12 curated tasks
+  covering every status, overdue/today/future/no due date, unassigned and
+  cross-assigned, plus 14 backlog tasks so Ana needs a second page. Due dates
+  are relative to today. Users are created only if missing, curated tasks
+  only if no demo user has tasks yet; `--bulk N` always adds N deterministic
+  random tasks (`random.Random(42)`). `migrate` runs the seed after Alembic.
+- Claude changed its own first design before review: `--bulk` was skipped on
+  an already-seeded database, which made it useless for measuring queries on
+  the dev database. Test first in `27192f4` (1 failed), fixed after.
+- Process slip, fixed before review: one local commit accidentally mixed the
+  seed implementation with that new test; it was split into `de145ef` and
+  `27192f4` (nothing had been pushed).
+- Actual results: `backend-tests` → 211 passed. Manually: `migrate` printed
+  "Demo data created", a second run "already present, left unchanged";
+  over HTTP the three demo users log in, Ana sees 22 tasks in 2 pages; the CLI
+  rejects `--bulk -1` with exit code 2. `main()` itself is not covered by
+  pytest because it commits to a real database.

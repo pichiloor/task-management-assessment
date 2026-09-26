@@ -5,7 +5,12 @@
 Steps 1 (tooling), 2 (PostgreSQL and Redis in Compose), 3 (domain rules and
 use cases, TDD), 4 (SQLAlchemy repositories, Alembic) and 5 (JWT login,
 Argon2, auth endpoints) and 6 (task CRUD endpoints, `/api/health`, `api`
-Compose service) are done. Next: demo seed data.
+Compose service) and 7 (demo seed) are done. Next: rate limiting.
+
+Demo data: `migrate` runs `python -m app.infrastructure.seed` after the
+migrations. It is idempotent; `--bulk N` adds N random tasks for query
+measurements. Demo users `ana@`, `bruno@`, `carla@example.com`, password
+`demo-password-2026` (public on purpose, local use only).
 
 API layout: `app/api/app.py` (`create_app` reads and validates settings at
 startup and keeps the session factory, token service and hasher on
@@ -92,7 +97,8 @@ startup must reject missing secrets. Demo credentials will be public and local.
 Do not expose PostgreSQL or Redis host ports. Use Docker Engine within WSL;
 use `sg docker -c "docker ..."` if needed, never Docker Desktop.
 Compose runs `db` (PostgreSQL 16.15) and `redis` (Redis 7.4.11) with
-healthchecks and a named volume for data, plus `migrate` (one-shot Alembic),
+healthchecks and a named volume for data, plus `migrate` (one-shot Alembic
+and demo seed),
 `api` (uvicorn factory on port 8000, not published yet; healthcheck on
 `/api/health`) and `backend-tests` (profile `test`). The backend Dockerfile has `runtime` and
 `test` targets and runs as a non-root user. The frontend Dockerfile, nginx and
