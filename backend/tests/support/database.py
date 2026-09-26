@@ -1,9 +1,10 @@
 """Selects and configures the throwaway database of the integration suite.
 
 The suite runs DROP DATABASE on this target, so the name is validated before
-any SQL is sent: a plain lowercase identifier ending in `_test` that fits in
-PostgreSQL's 63-byte limit. A longer name would be silently truncated by the
-server and could resolve to a real database.
+any SQL is sent. It must be exactly the application database name plus
+`_test` (so it can never be the application database itself), a plain
+lowercase identifier, and fit in PostgreSQL's 63-byte limit: a longer name
+would be silently truncated by the server and could resolve to a real one.
 """
 
 import re
@@ -24,6 +25,12 @@ class UnsafeTestDatabaseError(RuntimeError):
 
 def integration_database_url(env: Mapping[str, str]) -> URL:
     name = env["TEST_POSTGRES_DB"]
+    expected = env["POSTGRES_DB"] + "_test"
+    if name != expected:
+        raise UnsafeTestDatabaseError(
+            f"TEST_POSTGRES_DB must be {expected!r} (POSTGRES_DB + '_test'), "
+            f"got {name!r}"
+        )
     if not _SAFE_NAME.fullmatch(name):
         raise UnsafeTestDatabaseError(
             f"{name!r} is not a lowercase identifier ending in _test"

@@ -140,7 +140,8 @@
 ## 2026-09-26 — Codex review of step 4
 
 - Reviewer: Codex, model `gpt-6-astra`, read-only. Findings, all accepted
-  (tests first in `4bdd3db`, 11 unit tests failed on import; fixes after):
+  (tests first in `4bdd3db`; the 9 new unit tests could not even be collected
+  because the guard module did not exist yet; fixes after):
   - High: the `_test` suffix check was not enough before `DROP DATABASE`.
     PostgreSQL truncates identifiers to 63 bytes, so `<63-char name>_test`
     would resolve to the real database. Claude's guard only checked the
@@ -160,8 +161,23 @@
     and rejects inconsistent rows (unknown status, `completed` without
     `completed_at` and the reverse, uppercase email).
   - Suggestions adopted: the round-trip test also compares with the original
-    task, and a test fails if any repository method commits.
+    task, and a test fails if a repository method commits (it initially
+    skipped the read methods; see the follow-up below).
 - Also fixed: `useradd --system` warned about UID 10001; the user is now
   created as a regular non-login account with that UID.
 - Actual results: `backend-tests` → 101 passed; host `pytest` → 78 passed,
-  integration skipped; mypy strict passes.
+  integration skipped; mypy strict passes. After the follow-up below:
+  `backend-tests` → 103 passed; host `pytest` → 80 passed.
+
+## 2026-09-26 — Codex follow-up review of the step 4 fixes
+
+- Reviewer: Codex, model `gpt-6-astra`, read-only. It confirmed the previous
+  fixes and found two more issues, both accepted (tests first in `247a4f7`,
+  where 2 guard tests failed):
+  - High: the guard still accepted `POSTGRES_DB=production_test` with
+    `TEST_POSTGRES_DB=production_test`, i.e. it could drop the application
+    database. The test database must now be exactly `POSTGRES_DB + "_test"`.
+  - Low: the no-commit test skipped `get`, `get_by_email` and `list_active`;
+    it now calls every repository method, including not-found branches.
+  - It also corrected this log: the first test commit added 9 unit tests,
+    not 11, and they failed at collection rather than as individual tests.
