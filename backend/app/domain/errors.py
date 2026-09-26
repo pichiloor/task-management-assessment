@@ -18,3 +18,7 @@ class NotFoundError(DomainError):
 
 class PermissionDeniedError(DomainError):
     """Caller can see the resource but may not perform the action (maps to 403)."""
+
+
+class AuthenticationError(DomainError):
+    """Missing, invalid or expired credentials (maps to 401)."""
