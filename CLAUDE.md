@@ -2,8 +2,9 @@
 
 ## Scope and language
 
-The current milestone is step 1: environment, repository and quality tooling.
-Do not implement application behavior or run pytest/test suites in this step.
+Steps 1 (tooling) and 2 (PostgreSQL and Redis in Compose) are done. The next
+milestone is domain rules and use cases with TDD. The author authorized running
+pytest, coverage and frontend tests while implementing this repository.
 Keep code, comments and repository documents in English. Do not add libraries
 outside the approved stack without consulting the author.
 
@@ -53,7 +54,7 @@ its compiler check will be connected when source files exist.
 
 Use TDD for critical authorization and validation rules when that work is in
 scope. Backend coverage must reach at least 80%; meaningful integration tests
-use PostgreSQL and Redis. Future command (NOT authorized during step 1):
+use PostgreSQL and Redis. Command:
 `cd backend && uv run --locked pytest --cov=app --cov-report=term-missing`.
 Do not claim tests passed, coverage, performance or platform compatibility
 without executing the corresponding checks and recording real results.
@@ -65,7 +66,16 @@ secret fields. Later setup must generate a local secret, and Compose/application
 startup must reject missing secrets. Demo credentials will be public and local.
 Do not expose PostgreSQL or Redis host ports. Use Docker Engine within WSL;
 use `sg docker -c "docker ..."` if needed, never Docker Desktop.
-Dockerfiles, Compose, nginx and application CI are placeholders at this stage.
+Compose runs `db` (PostgreSQL 16.15) and `redis` (Redis 7.4.11) with
+healthchecks and a named volume for data. Backend/frontend Dockerfiles, nginx
+and application CI are still placeholders.
+
+```sh
+./scripts/setup-env.sh              # once: creates .env with random secrets
+docker compose up -d --wait         # start db and redis, wait until healthy
+docker compose down                 # stop, keep data
+docker compose down -v              # stop and delete the database volume
+```
 
 Record each AI session and actual corrections in `docs/ai-log.md`; record the
 exact tool/model only when verified. Save prompts, generated samples, review

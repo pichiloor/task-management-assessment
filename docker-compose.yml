@@ -1,3 +1,32 @@
-# Pending: PostgreSQL, Redis, migrations/seed, API, worker and nginx.
-# No runnable services in step 1.
-services: {}
+# Pending: migrations/seed, API, worker and nginx.
+# PostgreSQL and Redis are internal only: no host ports are published.
+name: task-management
+
+services:
+  db:
+    image: postgres:16.15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Run scripts/setup-env.sh first}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/setup-env.sh first}
+      POSTGRES_DB: ${POSTGRES_DB:?Run scripts/setup-env.sh first}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7.4.11-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db-data:

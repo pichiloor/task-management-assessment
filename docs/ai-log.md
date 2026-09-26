@@ -44,3 +44,20 @@
 - npm reported zero vulnerabilities. Staged whitespace validation passed.
 - Detailed scope and results are in `docs/genai/validation.md`. No test suites
   were run. The initial scaffold is ready for the requested commit and push.
+
+## 2026-09-26 — Step 2: PostgreSQL and Redis in Compose
+
+- Tool: Claude Code (model `claude-opus-5-5`), working directly in the repository.
+- Claude wrote `docker-compose.yml` (`db`, `redis`, healthchecks, named volume,
+  no host ports) and `scripts/setup-env.sh`, which generates `JWT_SECRET` and
+  `POSTGRES_PASSWORD` and never overwrites an existing `.env`.
+- Review decisions: image tags pinned to the exact versions reported by the
+  locally pulled images (`postgres:16.15-alpine`, `redis:7.4.11-alpine`) instead
+  of the floating `16-alpine`/`7-alpine` tags; Compose uses `${VAR:?}` so it
+  refuses to start without the generated secrets. The step-1 comment in
+  `.env.example` ("no services exist yet") was stale and was replaced.
+- Checked by hand: both services reach `healthy`; `psql` reports PostgreSQL
+  16.15; `redis-cli ping` returns `PONG`; `docker compose ps` shows no published
+  host ports; `docker compose --env-file /dev/null config` fails with the
+  setup message; a table survives a `db` restart; running the setup script
+  twice leaves `.env` unchanged. No test suites were run (no code yet).
