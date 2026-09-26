@@ -334,3 +334,32 @@
   over HTTP the three demo users log in, Ana sees 22 tasks in 2 pages; the CLI
   rejects `--bulk -1` with exit code 2. `main()` itself is not covered by
   pytest because it commits to a real database.
+
+## 2026-09-26 — Codex review of step 7
+
+- Reviewer: Codex, model `gpt-6-astra`, read-only. Three medium defects, one
+  weak test and three suggestions, all accepted (tests first in `c7e2aa7`):
+  - Concurrent runs could both insert the demo (52 tasks) or collide on the
+    unique email. The seed now takes a PostgreSQL advisory transaction lock;
+    a test holds the lock from another connection and expects a lock timeout.
+  - An existing demo user that was deactivated or had its password changed
+    was reused silently: the printed credentials failed and it still got
+    tasks. The seed now stops with a clear message; `--reset-demo-users`
+    reactivates it and restores the published password.
+  - Any task by a demo user suppressed the whole demo, and deleted demo tasks
+    never came back. Demo tasks are now matched by creator and title and
+    recreated when missing; a user's own tasks no longer block anything.
+  - Weak test: the date test passed even if `today` was ignored. It now pins
+    exact offsets (−1, 0, +21, none) for three different `today` values.
+  - Suggestions: the seed requires `SEED_DEMO_DATA=true` (set only by the
+    local `migrate` service); due dates use the Ecuador calendar date (UTC−5,
+    no DST) instead of the UTC date; the bulk test checks the rollback left an
+    empty database; the docstring no longer claims dates stay current.
+- Claude's own slips while fixing: Ruff had removed the `UserRow` import in the
+  first version, and `Result.tuples()` is deprecated in SQLAlchemy 2.1; both
+  fixed. A manual check first failed to deactivate Ana because `$$` in the
+  shell command expanded to a process ID; it was redone with a SQL file.
+- Actual results: `backend-tests` → 221 passed with deprecations as errors.
+  Manually on the dev database: the seed refuses without `SEED_DEMO_DATA`;
+  with Ana deactivated it exits 1 with the message above; with
+  `--reset-demo-users` Ana is active again; a normal run creates 0 tasks.

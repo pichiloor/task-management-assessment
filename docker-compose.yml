@@ -41,7 +41,9 @@ services:
     build:
       context: ./backend
       target: runtime
-    environment: *database-env
+    environment:
+      <<: *database-env
+      SEED_DEMO_DATA: "true"
     command: ["sh", "-c", "alembic upgrade head && python -m app.infrastructure.seed"]
     depends_on:
       db:

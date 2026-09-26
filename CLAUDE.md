@@ -8,8 +8,10 @@ Argon2, auth endpoints) and 6 (task CRUD endpoints, `/api/health`, `api`
 Compose service) and 7 (demo seed) are done. Next: rate limiting.
 
 Demo data: `migrate` runs `python -m app.infrastructure.seed` after the
-migrations. It is idempotent; `--bulk N` adds N random tasks for query
-measurements. Demo users `ana@`, `bruno@`, `carla@example.com`, password
+migrations, with `SEED_DEMO_DATA=true` (the seed refuses to run without it).
+It is idempotent and serialized by an advisory lock, recreates missing demo
+tasks, stops if a demo user was deactivated or its password changed (fix with
+`--reset-demo-users`), and `--bulk N` adds N random tasks for measurements. Demo users `ana@`, `bruno@`, `carla@example.com`, password
 `demo-password-2026` (public on purpose, local use only).
 
 API layout: `app/api/app.py` (`create_app` reads and validates settings at

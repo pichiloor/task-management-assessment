@@ -2,32 +2,38 @@
 assessment asks for demo credentials) and must never be used outside a local
 environment.
 
-Idempotent: users are created only if their email is missing, and the curated
-tasks only if no demo user has created any yet. `--bulk N` is an explicit
-request and always adds N random tasks, even on an already-seeded database.
-Due dates are relative to `today`, so the demo always has overdue, current and
-future tasks.
+Runs only with SEED_DEMO_DATA=true (set by the local Compose `migrate`
+service). Idempotent and serialized by an advisory lock: missing demo users
+are created, missing demo tasks (matched by creator and title) are recreated,
+and nothing else is touched. A demo user that was deactivated or whose
+password changed stops the run unless --reset-demo-users is given. `--bulk N`
+always adds N random tasks. Due dates are relative to the day each task is
+first created (Ecuador calendar date), so they age like real tasks.
 
-    python -m app.infrastructure.seed            # demo users and tasks
-    python -m app.infrastructure.seed --bulk 5000  # plus N random tasks
+    python -m app.infrastructure.seed                 # demo users and tasks
+    python -m app.infrastructure.seed --bulk 5000     # plus N random tasks
+    python -m app.infrastructure.seed --reset-demo-users
 """
 
 import argparse
+import os
 import random
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 
 from sqlalchemy import create_engine, func, insert, select
 from sqlalchemy.orm import Session
 
 from app.application.ports import PasswordHasher
 from app.domain.task import Task, TaskStatus
-from app.infrastructure.models import TaskRow
+from app.infrastructure.models import TaskRow, UserRow
 from app.infrastructure.repositories import SqlTaskRepository, SqlUserRepository
 from app.infrastructure.security import Argon2PasswordHasher
 from app.infrastructure.settings import DatabaseSettings
 
 DEMO_PASSWORD = "demo-password-2026"  # pragma: allowlist secret
+SEED_LOCK_KEY = 7_302_026  # arbitrary, app-wide advisory lock id
+ECUADOR = timezone(timedelta(hours=-5), "America/Guayaquil")
 
 
 @dataclass(frozen=True)
@@ -93,17 +99,37 @@ def _build(spec: DemoTask, ids: list[int], today: date, now: datetime) -> Task:
     return task
 
 
-def _ensure_users(session: Session, hasher: PasswordHasher) -> list[int]:
+class DemoUserConflictError(RuntimeError):
+    """A demo account exists but is inactive or no longer has the published
+    password. Re-run with --reset-demo-users to restore it."""
+
+
+def _ensure_users(
+    session: Session, hasher: PasswordHasher, *, reset: bool
+) -> list[int]:
     users = SqlUserRepository(session)
-    password_hash: str | None = None
     ids = []
     for demo in DEMO_USERS:
         existing = users.get_by_email(demo.email)
         if existing is None:
-            password_hash = password_hash or hasher.hash(DEMO_PASSWORD)
             existing = users.create(
-                email=demo.email, name=demo.name, password_hash=password_hash
+                email=demo.email,
+                name=demo.name,
+                password_hash=hasher.hash(DEMO_PASSWORD),
             )
+        elif not existing.is_active or not hasher.verify(
+            existing.password_hash, DEMO_PASSWORD
+        ):
+            if not reset:
+                raise DemoUserConflictError(
+                    f"{demo.email} exists but is inactive or its password changed; "
+                    "the published demo credentials would not work. Re-run with "
+                    "--reset-demo-users to restore it."
+                )
+            row = session.get_one(UserRow, existing.id)
+            row.is_active = True
+            row.password_hash = hasher.hash(DEMO_PASSWORD)
+            session.flush()
         ids.append(existing.id)
     return ids
 
@@ -139,43 +165,78 @@ def _bulk_rows(
 
 
 def seed_demo_data(
-    session: Session, hasher: PasswordHasher, *, today: date, bulk: int = 0
-) -> bool:
-    """Returns True if the curated demo tasks were created by this call."""
-    ids = _ensure_users(session, hasher)
-    already_seeded = session.scalar(
-        select(func.count()).select_from(TaskRow).where(TaskRow.creator_id.in_(ids))
-    )
+    session: Session,
+    hasher: PasswordHasher,
+    *,
+    today: date,
+    bulk: int = 0,
+    reset_users: bool = False,
+) -> int:
+    """Returns how many curated demo tasks were (re)created by this call."""
+    # Serializes concurrent runs (e.g. two `migrate` containers): released
+    # automatically when the transaction ends.
+    session.execute(select(func.pg_advisory_xact_lock(SEED_LOCK_KEY)))
+    ids = _ensure_users(session, hasher, reset=reset_users)
+
+    # A curated task is identified by its creator and title, so a user's own
+    # tasks never block the demo and deleted demo tasks come back.
+    existing: set[tuple[int, str]] = {
+        (creator_id, title)
+        for creator_id, title in session.execute(
+            select(TaskRow.creator_id, TaskRow.title).where(TaskRow.creator_id.in_(ids))
+        )
+    }
     now = datetime.now(UTC)
-    if not already_seeded:
-        tasks = SqlTaskRepository(session)
-        for spec in CURATED + BACKLOG:
+    tasks = SqlTaskRepository(session)
+    created = 0
+    for spec in CURATED + BACKLOG:
+        if (ids[spec.creator], spec.title) not in existing:
             tasks.add(_build(spec, ids, today, now))
+            created += 1
     if bulk:
         session.execute(insert(TaskRow), _bulk_rows(bulk, ids, today, now))
-    return not already_seeded
+    return created
+
+
+def demo_today(now: datetime) -> date:
+    """Calendar date in continental Ecuador (UTC-5, no daylight saving), where
+    the demo is presented. Timestamps stay in UTC; only due dates use this."""
+    return now.astimezone(ECUADOR).date()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--bulk", type=int, default=0, help="extra random tasks")
+    parser.add_argument(
+        "--reset-demo-users",
+        action="store_true",
+        help="reactivate demo users and restore the published password",
+    )
     args = parser.parse_args()
+    if os.environ.get("SEED_DEMO_DATA") != "true":
+        parser.error("refusing to seed: set SEED_DEMO_DATA=true (local demo only)")
     if args.bulk < 0:
         parser.error("--bulk must be 0 or greater")
 
     engine = create_engine(DatabaseSettings().url)
     with Session(engine) as session, session.begin():
-        created = seed_demo_data(
-            session,
-            Argon2PasswordHasher(),
-            today=datetime.now(UTC).date(),
-            bulk=args.bulk,
-        )
+        try:
+            created = seed_demo_data(
+                session,
+                Argon2PasswordHasher(),
+                today=demo_today(datetime.now(UTC)),
+                bulk=args.bulk,
+                reset_users=args.reset_demo_users,
+            )
+        except DemoUserConflictError as exc:
+            parser.exit(1, f"seed: {exc}\n")
     engine.dispose()
     users = ", ".join(u.email for u in DEMO_USERS)
-    state = "created" if created else "already present, left unchanged"
     extra = f" Added {args.bulk} bulk tasks." if args.bulk else ""
-    print(f"Demo data {state}.{extra} Users: {users} (password: {DEMO_PASSWORD})")
+    print(
+        f"Demo data ready ({created} demo tasks created).{extra} "
+        f"Users: {users} (password: {DEMO_PASSWORD})"
+    )
 
 
 if __name__ == "__main__":
