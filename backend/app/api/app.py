@@ -79,6 +79,10 @@ def create_app(
                 # ms of unacknowledged data before the socket is dropped: a
                 # server that stops answering cannot hang a request forever.
                 "tcp_user_timeout": 5000,
+                # Server-side bounds for slow queries and lock waits. A server
+                # that is fully frozen yet still ACKs TCP is not bounded here:
+                # psycopg has no client-side per-query timeout (documented).
+                "options": "-c statement_timeout=10000 -c lock_timeout=5000",
             },
         )
         session_factory = sessionmaker(bind=engine, expire_on_commit=False)

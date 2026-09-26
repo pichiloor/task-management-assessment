@@ -290,9 +290,25 @@
   - Low: OpenAPI marked PATCH `title`, `description` and `status` as nullable
     although the API rejects null. The schema now allows null only for
     `assignee_id` and `due_date`.
-  - Suggestions adopted: the combined filter test now has one decoy per
-    filter, and a test runs the CRUD with Redis down.
+  - Suggestions: a test runs the CRUD with Redis down. (This entry first
+    also claimed the filter test had one decoy per filter; that edit had
+    silently failed to apply. Codex caught it in the follow-up below.)
 - Claude's own mistake while fixing: a manual `$ref` to `TaskStatus` in the
   PATCH schema broke OpenAPI generation (`KeyError`); replaced by an inline
   enum. Results: `backend-tests` → 202 passed; the rebuilt `api` container
   reports healthy with the new connection parameters.
+- Follow-up review by Codex (`gpt-6-astra`) found:
+  - Medium: `tcp_user_timeout` bounds unacknowledged TCP data, not a query
+    waiting on a lock or a busy server. The engine now also sets
+    `statement_timeout=10s` and `lock_timeout=5s` for every connection (the
+    health check lowers it to 2s). Remaining limitation, documented in code:
+    a server that is completely frozen but still acknowledges TCP is not
+    bounded on the client side, because psycopg has no per-query timeout.
+  - Low: the filter-decoy change claimed above was never applied (Claude's
+    scripted replacement did not match the formatted file and was not
+    checked). Applied now; replacements are asserted from here on.
+  - Low: the Redis-down CRUD test only created and listed; it now also
+    reads, updates and deletes.
+  - Tests first in `42704e6` (1 failed: the missing timeout options).
+    Results: `backend-tests` → 202 passed; in the running `api` container
+    `SHOW statement_timeout` and `lock_timeout` return 10s and 5s.
