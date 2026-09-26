@@ -62,6 +62,8 @@ class TestJwt:
 
         assert tokens().subject(forged) is None
 
+    # Forging HS512 with the 32-byte secret triggers PyJWT's key-length warning.
+    @pytest.mark.filterwarnings("ignore::jwt.warnings.InsecureKeyLengthWarning")
     @pytest.mark.parametrize(
         ("key", "algorithm"),
         [(OTHER_SECRET, "HS256"), (SECRET, "HS512")],
