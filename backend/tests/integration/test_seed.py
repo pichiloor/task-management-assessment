@@ -116,3 +116,16 @@ def test_due_dates_are_relative_to_today(session: Session) -> None:
         .where(TaskRow.due_date < TODAY + timedelta(days=30))
     )
     assert overdue
+
+
+def test_bulk_on_an_already_seeded_database_still_adds_tasks(
+    session: Session,
+) -> None:
+    # --bulk is an explicit request (e.g. to measure queries on the dev
+    # database), so it must not be skipped just because the demo exists.
+    seed(session)
+    base = count_tasks(session)
+
+    seed(session, bulk=100)
+
+    assert count_tasks(session) == base + 100
