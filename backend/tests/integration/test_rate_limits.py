@@ -5,7 +5,7 @@ one points at an unreachable Redis to check the in-memory fallback.
 """
 
 import os
-import time
+import uuid
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 
@@ -86,15 +86,21 @@ class TestLogin:
             b = TestClient(a.app, client=("198.51.100.2", 50000))
             assert b.post(LOGIN, data=BAD_LOGIN).status_code == 401
 
-    def test_limit_recovers_after_the_window(self, make_client: MakeClient) -> None:
-        with make_client(memory(login="2/second")) as client:
-            for _ in range(2):
-                client.post(LOGIN, data=BAD_LOGIN)
-            assert client.post(LOGIN, data=BAD_LOGIN).status_code == 429
+    def test_blocked_login_does_no_password_work(self, make_client: MakeClient) -> None:
+        # A rejected attempt must be cheap: no Argon2 verification.
+        with make_client(memory(login="1/minute")) as client:
+            verify = client.app.state.hasher.verify  # type: ignore[attr-defined]
+            calls: list[object] = []
 
-            time.sleep(1.1)
+            def counting(*args: object) -> bool:
+                calls.append(args)
+                return bool(verify(*args))
 
-            assert client.post(LOGIN, data=BAD_LOGIN).status_code == 401
+            client.app.state.hasher.verify = counting  # type: ignore[attr-defined]
+            client.post(LOGIN, data=BAD_LOGIN)
+            client.post(LOGIN, data=BAD_LOGIN)
+
+        assert len(calls) == 1
 
 
 class TestApi:
@@ -154,6 +160,27 @@ class TestProxyHeaders:
             429,
         )
 
+    def test_multi_hop_header_uses_the_address_the_proxy_saw(
+        self, make_client: MakeClient
+    ) -> None:
+        # nginx appends the real client address; anything to its left was sent
+        # by the client and must not create new counters.
+        settings = memory(login="1/minute", trusted_proxies="172.28.0.0/16")
+
+        with make_client(settings, "172.28.0.10") as proxy:
+            proxy.post(
+                LOGIN,
+                data=BAD_LOGIN,
+                headers={"X-Forwarded-For": "1.1.1.1, 203.0.113.7"},
+            )
+            spoofed = proxy.post(
+                LOGIN,
+                data=BAD_LOGIN,
+                headers={"X-Forwarded-For": "2.2.2.2, 203.0.113.7"},
+            )
+
+        assert spoofed.status_code == 429
+
     def test_forwarded_header_from_an_untrusted_client_is_ignored(
         self, make_client
     ) -> None:
@@ -176,16 +203,22 @@ class TestStorage:
         if not url:
             pytest.skip("TEST_REDIS_URL is not set")
         server = redis.Redis.from_url(url)
-        server.flushdb()
+        # Never touch database 0; and only this run's keys are removed.
+        assert server.connection_pool.connection_kwargs.get("db", 0) != 0
+        prefix = f"test-{uuid.uuid4().hex}"
+        try:
+            with make_client(
+                RateLimitSettings(storage_uri=url, login="2/minute", key_prefix=prefix)
+            ) as client:
+                codes = [
+                    client.post(LOGIN, data=BAD_LOGIN).status_code for _ in range(3)
+                ]
 
-        with make_client(
-            RateLimitSettings(storage_uri=url, login="2/minute")
-        ) as client:
-            codes = [client.post(LOGIN, data=BAD_LOGIN).status_code for _ in range(3)]
-
-        assert codes == [401, 401, 429]
-        assert server.dbsize() > 0
-        server.flushdb()
+            assert codes == [401, 401, 429]
+            assert list(server.scan_iter(match=f"*{prefix}*"))
+        finally:
+            for key in server.scan_iter(match=f"*{prefix}*"):
+                server.delete(key)
 
     def test_login_stays_limited_when_redis_is_down(
         self, make_client: MakeClient
@@ -203,3 +236,15 @@ def test_default_limits_match_the_plan() -> None:
     settings = RateLimitSettings(storage_uri="memory://")
 
     assert (settings.login, settings.api) == ("5/minute", "120/minute")
+
+
+def test_every_v1_operation_documents_429(client: TestClient) -> None:
+    paths = client.get("/api/openapi.json").json()["paths"]
+
+    for path, operations in paths.items():
+        if not path.startswith("/api/v1"):
+            continue
+        for method, operation in operations.items():
+            response = operation["responses"].get("429")
+            assert response, (method, path)
+            assert "Retry-After" in response.get("headers", {}), (method, path)
