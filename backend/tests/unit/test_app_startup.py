@@ -2,6 +2,7 @@
 failing later with a 500 on the first login."""
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.api.app import create_app
@@ -37,3 +38,29 @@ def test_valid_configuration_starts(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("JWT_SECRET", "k" * 32)
 
     assert create_app().title == "Task Management API"
+
+
+def test_engine_created_by_the_app_is_disposed_on_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET", "k" * 32)
+    app = create_app()
+    disposed: list[bool] = []
+    monkeypatch.setattr(app.state.engine, "dispose", lambda: disposed.append(True))
+
+    with TestClient(app):
+        assert disposed == []
+
+    assert disposed == [True]
+
+
+def test_injected_session_factory_is_left_to_its_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET", "k" * 32)
+    app = create_app(session_factory=lambda: None)  # type: ignore[arg-type,return-value]
+
+    with TestClient(app):
+        pass
+
+    assert app.state.engine is None
