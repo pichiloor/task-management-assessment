@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import create_engine
+from sqlalchemy import URL, create_engine
 
 from app.infrastructure.models import Base
 from app.infrastructure.settings import database_settings
@@ -13,12 +13,12 @@ if config.config_file_name is not None and config.attributes.get(
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 
-def _url() -> str:
-    # Explicit override (tests) wins over the POSTGRES_* environment.
-    override = config.get_main_option("sqlalchemy.url")
-    if override:
+def _url() -> URL:
+    # A URL passed programmatically (tests) wins over the POSTGRES_* variables.
+    override = config.attributes.get("url")
+    if isinstance(override, URL):
         return override
-    return database_settings().url.render_as_string(hide_password=False)
+    return database_settings().url
 
 
 def run_migrations_offline() -> None:

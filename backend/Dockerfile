@@ -18,7 +18,7 @@ RUN uv sync --locked --no-dev --no-install-project
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY app ./app
-RUN useradd --system --uid 10001 app
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
 USER app
 
 # Test image: adds the dev group and the test suite.
@@ -29,6 +29,6 @@ COPY migrations ./migrations
 COPY app ./app
 COPY tests ./tests
 ENV COVERAGE_FILE=/tmp/.coverage
-RUN useradd --system --uid 10001 app
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
 USER app
 CMD ["pytest", "-p", "no:cacheprovider", "--cov=app", "--cov-report=term-missing"]

@@ -1,7 +1,8 @@
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import Connection, text
+from sqlalchemy import Connection, event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -89,6 +90,9 @@ class TestTaskRoundTrip:
 
         assert stored.id is not None
         assert loaded == stored
+        # Compare with the original too: a field lost in both directions of
+        # the mapping would make `loaded == stored` pass.
+        assert replace(loaded, id=None) == task
         assert loaded.status is TaskStatus.COMPLETED
         assert loaded.completed_at == NOW + timedelta(hours=1)
         assert loaded.created_at.tzinfo is not None
@@ -120,6 +124,25 @@ class TestTaskRoundTrip:
         session.expire_all()
 
         assert tasks.get(task.id or 0).title == "Task"  # type: ignore[union-attr]
+
+
+def test_repositories_never_commit(session: Session, me: int) -> None:
+    commits: list[object] = []
+    event.listen(session, "after_commit", commits.append)
+    tasks = SqlTaskRepository(session)
+
+    task = tasks.add(new_task(me))
+    task.rename("Renamed", now=NOW)
+    tasks.save(task)
+    tasks.list(query(me))
+    tasks.delete(task.id or 0)
+    SqlUserRepository(session).create(
+        email="x@example.com",
+        name="X",
+        password_hash="h",  # pragma: allowlist secret
+    )
+
+    assert commits == []
 
 
 class TestVisibilityAndFilters:

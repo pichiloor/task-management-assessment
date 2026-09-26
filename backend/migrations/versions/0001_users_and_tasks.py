@@ -30,7 +30,9 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.CheckConstraint("email = lower(email)", name="ck_users_email_lowercase"),
+        sa.CheckConstraint(
+            "email = lower(email)", name=op.f("ck_users_email_lowercase")
+        ),
         sa.PrimaryKeyConstraint("id", name="pk_users"),
         sa.UniqueConstraint("email", name="uq_users_email"),
     )
@@ -53,11 +55,11 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
             "status IN ('pending', 'in_progress', 'completed')",
-            name="ck_tasks_status_valid",
+            name=op.f("ck_tasks_status_valid"),
         ),
         sa.CheckConstraint(
             "(status = 'completed') = (completed_at IS NOT NULL)",
-            name="ck_tasks_completed_at_matches_status",
+            name=op.f("ck_tasks_completed_at_matches_status"),
         ),
         sa.ForeignKeyConstraint(
             ["creator_id"],

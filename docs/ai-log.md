@@ -136,3 +136,32 @@
   host, `pytest` runs the 69 unit tests and skips the integration tests.
 - Fixed during the step: an unnecessary `type: ignore` flagged by mypy, and an
   Alembic deprecation warning (`path_separator` missing in `alembic.ini`).
+
+## 2026-09-26 — Codex review of step 4
+
+- Reviewer: Codex, model `gpt-6-astra`, read-only. Findings, all accepted
+  (tests first in `4bdd3db`, 11 unit tests failed on import; fixes after):
+  - High: the `_test` suffix check was not enough before `DROP DATABASE`.
+    PostgreSQL truncates identifiers to 63 bytes, so `<63-char name>_test`
+    would resolve to the real database. Claude's guard only checked the
+    suffix. The guard now requires a lowercase identifier ending in `_test`
+    that fits in 63 bytes, and raises a real exception instead of `assert`.
+  - Medium: the test URL was built by string interpolation in Compose, so a
+    password with `@`, `/` or `%` broke it, and Alembic's
+    `set_main_option` would choke on `%`. The URL is now built with
+    `URL.create()` from components and handed to Alembic through
+    `config.attributes`.
+  - Low: the migration re-prefixed full constraint names through the naming
+    convention (`ck_users_ck_users_email_lowercase`). Names are now wrapped in
+    `op.f()`; the development database was rebuilt with the corrected names.
+  - Medium: the drift test did not compare server defaults and Alembic never
+    compares CHECK constraints, so CLAUDE.md overstated what it catches. It
+    now compares defaults and types, and a new test checks constraint names
+    and rejects inconsistent rows (unknown status, `completed` without
+    `completed_at` and the reverse, uppercase email).
+  - Suggestions adopted: the round-trip test also compares with the original
+    task, and a test fails if any repository method commits.
+- Also fixed: `useradd --system` warned about UID 10001; the user is now
+  created as a regular non-login account with that UID.
+- Actual results: `backend-tests` → 101 passed; host `pytest` → 78 passed,
+  integration skipped; mypy strict passes.

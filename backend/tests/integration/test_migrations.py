@@ -7,6 +7,12 @@ from app.infrastructure.models import Base
 
 def test_migrations_match_the_models(engine: Engine) -> None:
     with engine.connect() as conn:
-        diff = compare_metadata(MigrationContext.configure(conn), Base.metadata)
+        context = MigrationContext.configure(
+            conn, opts={"compare_type": True, "compare_server_default": True}
+        )
+        diff = compare_metadata(context, Base.metadata)
 
     assert diff == []
+
+
+# Alembic does not compare CHECK constraints; test_schema_constraints.py does.

@@ -58,7 +58,9 @@ Use TDD for critical authorization and validation rules when that work is in
 scope. Backend coverage must reach at least 80%; meaningful integration tests
 use PostgreSQL and Redis. PostgreSQL has no host port, so the full suite runs
 in Docker against a separate `<POSTGRES_DB>_test` database that is dropped and
-rebuilt each run; on the host, integration tests are skipped:
+rebuilt each run (`tests/support/database.py` refuses any name that is not a
+plain identifier ending in `_test` within 63 bytes); on the host, integration
+tests are skipped:
 
 ```sh
 docker compose run --rm --build backend-tests            # full suite + coverage
@@ -66,8 +68,10 @@ cd backend && uv run --locked pytest                     # unit tests only
 ```
 
 Migrations: `docker compose run --rm migrate` applies them. Write each revision
-by hand under `backend/migrations/versions/`; `test_migrations.py` fails if the
-models and migrations drift apart.
+by hand under `backend/migrations/versions/`, wrapping full constraint names in
+`op.f()`. `test_migrations.py` compares tables, columns, types, indexes and
+server defaults with the models; Alembic does not compare CHECK constraints,
+so `test_schema_constraints.py` checks their names and behavior.
 Do not claim tests passed, coverage, performance or platform compatibility
 without executing the corresponding checks and recording real results.
 
@@ -79,8 +83,10 @@ startup must reject missing secrets. Demo credentials will be public and local.
 Do not expose PostgreSQL or Redis host ports. Use Docker Engine within WSL;
 use `sg docker -c "docker ..."` if needed, never Docker Desktop.
 Compose runs `db` (PostgreSQL 16.15) and `redis` (Redis 7.4.11) with
-healthchecks and a named volume for data. Backend/frontend Dockerfiles, nginx
-and application CI are still placeholders.
+healthchecks and a named volume for data, plus `migrate` (one-shot Alembic)
+and `backend-tests` (profile `test`). The backend Dockerfile has `runtime` and
+`test` targets and runs as a non-root user. The frontend Dockerfile, nginx and
+application CI are still placeholders.
 
 ```sh
 ./scripts/setup-env.sh              # once: creates .env with random secrets
