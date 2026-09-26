@@ -2,29 +2,23 @@ import threading
 import time
 
 import pytest
+from limits import parse
 from limits.storage import MemoryStorage
 from pydantic import ValidationError
 from redis.exceptions import ConnectionError as RedisConnectionError
 
-from app.infrastructure.rate_limiter import RateLimiter
+from app.infrastructure.rate_limiter import InMemoryFixedWindow, RateLimiter
 from app.infrastructure.settings import RateLimitSettings
 
 UNREACHABLE = "redis://127.0.0.1:1/0"
 
 
-class SlowMemoryStorage(MemoryStorage):
-    """Mirrors MemoryStorage.get (limits 5.8) with a pause between the expiry
-    check and the removal. Without external locking, a thread that saw "no
-    counter yet" then deletes the counter another thread just created, and
-    both requests are admitted."""
-
-    def get(self, key: str) -> int:
-        if self.expirations.get(key, 0) <= time.time():
-            time.sleep(0.05)
-            self.storage.pop(key, None)
-            self.expirations.pop(key, None)
-            self.locks.pop(key, None)
-        return int(self.storage.get(key, 0))
+def slow_clock() -> float:
+    """Pauses inside the counter's critical section: without the lock, two
+    threads read the same count and both are admitted."""
+    now = time.monotonic()
+    time.sleep(0.05)
+    return now
 
 
 class BrokenStorage(MemoryStorage):
@@ -65,7 +59,7 @@ def test_concurrent_hits_on_the_memory_fallback_are_not_lost() -> None:
     limiter = RateLimiter(
         UNREACHABLE,
         primary_storage=BrokenStorage(RedisConnectionError("down")),
-        fallback_storage=SlowMemoryStorage(),
+        fallback=InMemoryFixedWindow(clock=slow_clock),
     )
     limiter.hit("1/minute", "warm-up")  # marks the primary as down
 
@@ -114,13 +108,31 @@ def test_window_resets_after_its_period() -> None:
 class TestSettings:
     @pytest.mark.parametrize(
         "value",
-        ["100/second; 5/minute", "0/minute", "5/0 seconds", "abc", ""],
+        [
+            "100/second; 5/minute",
+            "5/minute, 1/second",
+            "0/minute",
+            "5/0 seconds",
+            "5 per 0 minute",
+            "abc",
+            "",
+        ],
     )
     def test_ambiguous_or_degenerate_limits_are_rejected(self, value: str) -> None:
         with pytest.raises(ValidationError):
             RateLimitSettings(storage_uri="memory://", login=value)
 
-    @pytest.mark.parametrize("value", ["5/minute", "120 per minute", "10/5 seconds"])
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "5/minute",
+            "120 per minute",
+            "10/5 seconds",
+            "5/MINUTE",
+            "5/month",
+            "5/2seconds",
+        ],
+    )
     def test_single_positive_limits_are_accepted(self, value: str) -> None:
         assert RateLimitSettings(storage_uri="memory://", api=value).api == value
 
@@ -155,3 +167,48 @@ def test_redis_is_used_again_once_it_recovers() -> None:
     limiter.hit("5/minute", "k")
     limiter.hit("5/minute", "k")
     assert sum(flaky.storage.values()) == 2  # both counted in the primary
+
+
+def test_memory_counter_has_no_background_cleanup_thread() -> None:
+    # limits' MemoryStorage deletes expired keys from a timer thread that
+    # bypasses any caller lock; the in-memory counter must not do that.
+    before = threading.active_count()
+    window = InMemoryFixedWindow()
+    for i in range(50):
+        window.hit(parse("1/second"), f"k{i}")
+
+    assert threading.active_count() == before
+
+
+def test_expired_windows_are_pruned() -> None:
+    now = [0.0]
+    window = InMemoryFixedWindow(clock=lambda: now[0], prune_every=10)
+    for i in range(10):
+        window.hit(parse("1/second"), f"k{i}")
+    now[0] = 5.0
+    for i in range(10):
+        window.hit(parse("1/second"), f"new{i}")
+
+    assert window.size() <= 10
+
+
+def test_a_newer_failure_stops_a_pending_probe() -> None:
+    # Simulates another thread's failed probe landing between this request's
+    # time check and its probe: the probe must re-check the deadline.
+    broken = BrokenStorage(RedisConnectionError("down"))
+    limiter: RateLimiter
+    reads = [0]
+
+    def clock() -> float:
+        reads[0] += 1
+        if reads[0] == 3:  # after the initial failure and the time check
+            limiter._primary_down_until = 61.0  # noqa: SLF001
+        return 31.0 if reads[0] > 1 else 0.0
+
+    limiter = RateLimiter(UNREACHABLE, primary_storage=broken, clock=clock)
+    limiter.hit("5/minute", "k")
+    assert broken.calls == 1
+
+    limiter.hit("5/minute", "k")
+
+    assert broken.calls == 1
