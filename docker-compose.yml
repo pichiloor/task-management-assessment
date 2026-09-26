@@ -89,8 +89,12 @@ services:
     environment:
       <<: *database-env
       TEST_POSTGRES_DB: ${POSTGRES_DB}_test
+      # Database 15 is reserved for tests and flushed by them.
+      TEST_REDIS_URL: redis://redis:6379/15
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
 volumes:
