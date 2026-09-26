@@ -31,7 +31,12 @@ def auth(hasher: FakePasswordHasher) -> AuthService:
             user(INACTIVE, "old@example.com", active=False),
         ]
     )
-    return AuthService(users=users, hasher=hasher, tokens=FakeTokenService())
+    return AuthService(
+        users=users,
+        hasher=hasher,
+        tokens=FakeTokenService(),
+        dummy_hash="hashed:never-matches",  # pragma: allowlist secret
+    )
 
 
 class TestLogin:
@@ -72,6 +77,15 @@ class TestLogin:
 
 
 class TestCurrentUser:
+    def test_checking_a_token_never_hashes(
+        self, auth: AuthService, hasher: FakePasswordHasher
+    ) -> None:
+        # Argon2 costs ~64 MiB per hash; token checks run on every request.
+        auth.current_user(f"token:{ACTIVE}")
+
+        assert hasher.hashed == []
+        assert hasher.verified == []
+
     @pytest.mark.parametrize("token", ["", "garbage", "token:", "token:999"])
     def test_invalid_or_unknown_subject_is_rejected(
         self, auth: AuthService, token: str

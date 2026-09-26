@@ -87,6 +87,9 @@ class TestJwt:
             {"exp": 9999999999},  # no subject
             {"sub": "abc", "exp": 9999999999},
             {"sub": "-3", "exp": 9999999999},
+            {"sub": "9" * 4301, "exp": 9999999999},  # int() would raise
+            {"sub": "2147483648", "exp": 9999999999},  # beyond PostgreSQL integer
+            {"sub": "0", "exp": 9999999999},
         ],
     )
     def test_missing_or_malformed_claims_are_rejected(
@@ -124,3 +127,15 @@ class TestAuthSettings:
         monkeypatch.setenv("JWT_SECRET", SECRET)
 
         assert SECRET not in repr(AuthSettings())
+
+
+def test_invalid_secret_is_not_echoed_in_the_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    short = "leak-me-" + "z" * 10  # pragma: allowlist secret
+    monkeypatch.setenv("JWT_SECRET", short)
+
+    with pytest.raises(ValidationError) as exc:
+        AuthSettings()
+
+    assert short not in str(exc.value)

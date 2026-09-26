@@ -6,7 +6,7 @@ every test runs inside a transaction that is rolled back afterwards.
 """
 
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -17,8 +17,8 @@ from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session
 
 from app.api.app import create_app
-from app.api.dependencies import get_session, get_token_service
 from app.infrastructure.security import JwtTokenService
+from app.infrastructure.settings import AuthSettings
 from tests.support.database import alembic_config, integration_database_url
 
 if not os.environ.get("TEST_POSTGRES_DB"):
@@ -76,11 +76,22 @@ def token_service(now: datetime | None = None) -> JwtTokenService:
     )
 
 
+def savepoint_sessions(connection: Connection) -> Callable[[], Session]:
+    """Session factory for the app: each request's commit becomes a savepoint
+    release inside the test transaction, so the real commit/rollback code in
+    get_session runs and the outer rollback still discards everything."""
+    return lambda: Session(
+        bind=connection,
+        join_transaction_mode="create_savepoint",
+        expire_on_commit=False,
+    )
+
+
 @pytest.fixture
-def client(session: Session) -> Iterator[TestClient]:
-    """API client whose requests share the test transaction."""
-    app = create_app()
-    app.dependency_overrides[get_session] = lambda: session
-    app.dependency_overrides[get_token_service] = token_service
+def client(connection: Connection) -> Iterator[TestClient]:
+    app = create_app(
+        auth=AuthSettings(secret=TEST_JWT_SECRET),
+        session_factory=savepoint_sessions(connection),
+    )
     with TestClient(app) as test_client:
         yield test_client

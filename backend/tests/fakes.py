@@ -79,9 +79,11 @@ class FakePasswordHasher:
     """Reversible stand-in for Argon2; records every verification."""
 
     def __init__(self) -> None:
+        self.hashed: list[str] = []
         self.verified: list[tuple[str, str]] = []
 
     def hash(self, password: str) -> str:
+        self.hashed.append(password)
         return "hashed:" + password
 
     def verify(self, password_hash: str, password: str) -> bool:
