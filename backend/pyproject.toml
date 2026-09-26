@@ -82,7 +82,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 filterwarnings = [
     # Starlette asks for `httpx2`, which is outside the approved stack.
-    "ignore:Using `httpx` with `starlette.testclient` is deprecated:DeprecationWarning",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
 ]
 
 [tool.coverage.run]
