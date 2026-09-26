@@ -21,10 +21,11 @@ random_hex() {
 jwt_secret=$(random_hex)
 postgres_password=$(random_hex)
 
+# Owner-only from the first byte, not after a later chmod.
+umask 077
 sed \
   -e "s/^JWT_SECRET=.*/JWT_SECRET=${jwt_secret}/" \
   -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${postgres_password}/" \
   .env.example > .env
-chmod 600 .env
 
 echo "Created .env with generated JWT_SECRET and POSTGRES_PASSWORD."

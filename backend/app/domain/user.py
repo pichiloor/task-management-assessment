@@ -8,3 +8,11 @@ class User:
     name: str
     password_hash: str
     is_active: bool
+
+
+@dataclass(frozen=True)
+class UserSummary:
+    """Public view of a user: safe to show to any authenticated caller."""
+
+    id: int
+    name: str

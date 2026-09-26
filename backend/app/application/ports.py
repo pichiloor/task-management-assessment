@@ -25,6 +25,9 @@ class TaskQuery:
 
 
 class TaskRepository(Protocol):
+    """Returns detached copies: mutating a returned Task changes nothing until
+    `save` is called, so a use case that fails midway persists nothing."""
+
     def add(self, task: Task) -> Task: ...
 
     def get(self, task_id: int) -> Task | None: ...

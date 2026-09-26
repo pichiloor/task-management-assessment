@@ -54,7 +54,9 @@
 - Review decisions: image tags pinned to the exact versions reported by the
   locally pulled images (`postgres:16.15-alpine`, `redis:7.4.11-alpine`) instead
   of the floating `16-alpine`/`7-alpine` tags; Compose uses `${VAR:?}` so it
-  refuses to start without the generated secrets. The step-1 comment in
+  refuses to start without the PostgreSQL credentials. (Corrected after the
+  Codex review below: `JWT_SECRET` is generated but not yet required by
+  Compose, because no service consumes it until the API and worker exist.) The step-1 comment in
   `.env.example` ("no services exist yet") was stale and was replaced.
 - Checked by hand: both services reach `healthy`; `psql` reports PostgreSQL
   16.15; `redis-cli ping` returns `PONG`; `docker compose ps` shows no published
@@ -86,3 +88,27 @@
 - Actual result: `pytest --cov=app` → 56 passed, 100% line and branch coverage
   of the domain and application layers (no infrastructure or API code exists
   yet). mypy strict and all three import-linter contracts pass.
+
+## 2026-09-26 — Codex review of steps 2 and 3
+
+- Reviewer: Codex, model `gpt-6-astra`, read-only sandbox (no edits). Requested
+  by the author: every change by Claude Code is now reviewed by Codex.
+- Findings accepted and fixed (tests first in `d6abedd`, fixes after):
+  - Medium: `rename`, `describe`, `set_due_date` and `assign` changed the field
+    before validating `now`, so a rejected call left a half-applied change.
+    Claude had fixed only `change_status`. All mutators now validate first.
+  - Low: aware non-UTC timestamps were stored with their original offset.
+    They are now normalized to UTC.
+  - Low: this log overstated the Compose secret check (see step 2 note).
+  - Medium (suggestion): `assignable_users` returned full `User` objects,
+    including `password_hash`; it now returns `UserSummary(id, name)`.
+  - Medium (suggestion): the repository contract now states that returned
+    tasks are detached copies, and a test checks that a PATCH failing after a
+    valid change persists nothing. The SQLAlchemy adapter must honor this.
+  - Low (suggestion): `setup-env.sh` wrote `.env` world-readable until
+    `chmod`; it now sets `umask 077` before writing.
+- Deferred to step 4: exact ordering tests (unsorted dates, ties, null due
+  dates, open ranges). Ordering is implemented by the repository, so these
+  tests will run against PostgreSQL rather than the in-memory fake.
+- Result after fixes: 64 passed, 100% coverage of domain and application;
+  mypy strict passes.

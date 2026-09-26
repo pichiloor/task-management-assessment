@@ -8,7 +8,7 @@ from app.application.ports import Clock, TaskQuery, TaskRepository, UserReposito
 from app.domain.errors import ValidationError
 from app.domain.permissions import ensure_can_delete, ensure_can_update, ensure_can_view
 from app.domain.task import Task, TaskStatus
-from app.domain.user import User
+from app.domain.user import UserSummary
 
 
 class Unset(Enum):
@@ -113,8 +113,8 @@ class TaskService:
         ensure_can_delete(task, actor_id)
         self._tasks.delete(task_id)
 
-    def assignable_users(self) -> list[User]:
-        return self._users.list_active()
+    def assignable_users(self) -> list[UserSummary]:
+        return [UserSummary(id=u.id, name=u.name) for u in self._users.list_active()]
 
     def _ensure_assignable(self, user_id: int | None) -> None:
         if user_id is None:

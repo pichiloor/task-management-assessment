@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from app.domain.errors import ValidationError
@@ -14,10 +14,15 @@ class TaskStatus(StrEnum):
     COMPLETED = "completed"
 
 
-def _require_aware(now: datetime) -> datetime:
+def _to_utc(now: datetime) -> datetime:
+    """Rejects naive datetimes and normalizes aware ones to UTC.
+
+    Every mutator calls this before changing any field, so a rejected call
+    leaves the task untouched.
+    """
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("timestamps must be timezone-aware")
-    return now
+    return now.astimezone(UTC)
 
 
 def _clean_title(title: str) -> str:
@@ -64,7 +69,7 @@ class Task:
         due_date: date | None,
         now: datetime,
     ) -> "Task":
-        _require_aware(now)
+        now = _to_utc(now)
         return cls(
             title=_clean_title(title),
             description=_clean_description(description),
@@ -78,30 +83,31 @@ class Task:
         )
 
     def rename(self, title: str, *, now: datetime) -> None:
+        now = _to_utc(now)
         self.title = _clean_title(title)
-        self._touch(now)
+        self.updated_at = now
 
     def describe(self, description: str, *, now: datetime) -> None:
+        now = _to_utc(now)
         self.description = _clean_description(description)
-        self._touch(now)
+        self.updated_at = now
 
     def set_due_date(self, due_date: date | None, *, now: datetime) -> None:
+        now = _to_utc(now)
         self.due_date = due_date
-        self._touch(now)
+        self.updated_at = now
 
     def assign(self, assignee_id: int | None, *, now: datetime) -> None:
+        now = _to_utc(now)
         self.assignee_id = assignee_id
-        self._touch(now)
+        self.updated_at = now
 
     def change_status(self, status: TaskStatus, *, now: datetime) -> None:
-        _require_aware(now)
+        now = _to_utc(now)
         if status is TaskStatus.COMPLETED:
             if self.status is not TaskStatus.COMPLETED:
                 self.completed_at = now
         else:
             self.completed_at = None
         self.status = status
-        self._touch(now)
-
-    def _touch(self, now: datetime) -> None:
-        self.updated_at = _require_aware(now)
+        self.updated_at = now
