@@ -112,3 +112,27 @@
   tests will run against PostgreSQL rather than the in-memory fake.
 - Result after fixes: 64 passed, 100% coverage of domain and application;
   mypy strict passes.
+
+## 2026-09-26 — Step 4: SQLAlchemy repositories and Alembic
+
+- Tool: Claude Code (model `claude-opus-5-5`).
+- Claude wrote the integration tests first (repository round trip, detached
+  copies, visibility, filters, exact ordering with ties and null due dates,
+  open ranges, pagination, case-insensitive email, database constraints,
+  indexes, migration drift and PATCH atomicity with real repositories), then
+  the settings, models, repositories, the hand-written migration `0001` and
+  the Docker test runner. Tests and implementation are in one commit: the red
+  run was not executed separately, so this step is not presented as TDD.
+- Design decisions: repositories flush but never commit (the request owns the
+  transaction) and return domain dataclasses, never ORM rows; emails are stored
+  lowercased with a check constraint; the database also enforces valid
+  statuses and that `completed_at` is set exactly when a task is completed.
+- Integration tests need PostgreSQL, which has no host port by design, so they
+  run in the `backend-tests` Compose service against `<db>_test`; the fixture
+  refuses to drop any database whose name does not end in `_test`.
+- Actual results: `docker compose run --rm --build backend-tests` → 85 passed,
+  98.73% coverage. `migrate` exited 0; `alembic downgrade base`, `upgrade
+  head` and `alembic check` succeeded on the development database. On the
+  host, `pytest` runs the 69 unit tests and skips the integration tests.
+- Fixed during the step: an unnecessary `type: ignore` flagged by mypy, and an
+  Alembic deprecation warning (`path_separator` missing in `alembic.ini`).

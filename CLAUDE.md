@@ -2,8 +2,9 @@
 
 ## Scope and language
 
-Steps 1 (tooling), 2 (PostgreSQL and Redis in Compose) and 3 (domain rules and
-use cases, TDD) are done. Next: SQLAlchemy models and Alembic migrations.
+Steps 1 (tooling), 2 (PostgreSQL and Redis in Compose), 3 (domain rules and
+use cases, TDD) and 4 (SQLAlchemy repositories, Alembic) are done. Next: JWT
+authentication and access rules.
 Unit tests use the in-memory fakes in `backend/tests/fakes.py`. The author authorized running
 pytest, coverage and frontend tests while implementing this repository.
 Keep code, comments and repository documents in English. Do not add libraries
@@ -55,8 +56,18 @@ its compiler check will be connected when source files exist.
 
 Use TDD for critical authorization and validation rules when that work is in
 scope. Backend coverage must reach at least 80%; meaningful integration tests
-use PostgreSQL and Redis. Command:
-`cd backend && uv run --locked pytest --cov=app --cov-report=term-missing`.
+use PostgreSQL and Redis. PostgreSQL has no host port, so the full suite runs
+in Docker against a separate `<POSTGRES_DB>_test` database that is dropped and
+rebuilt each run; on the host, integration tests are skipped:
+
+```sh
+docker compose run --rm --build backend-tests            # full suite + coverage
+cd backend && uv run --locked pytest                     # unit tests only
+```
+
+Migrations: `docker compose run --rm migrate` applies them. Write each revision
+by hand under `backend/migrations/versions/`; `test_migrations.py` fails if the
+models and migrations drift apart.
 Do not claim tests passed, coverage, performance or platform compatibility
 without executing the corresponding checks and recording real results.
 
