@@ -100,3 +100,15 @@ class FakeTokenService:
     def subject(self, token: str) -> int | None:
         prefix, _, value = token.partition(":")
         return int(value) if prefix == "token" and value.isdigit() else None
+
+
+class FakeRedis:
+    """Answers PING, or fails like an unreachable server."""
+
+    def __init__(self, *, up: bool = True) -> None:
+        self.up = up
+
+    def ping(self) -> bool:
+        if not self.up:
+            raise ConnectionError("redis unavailable")
+        return True

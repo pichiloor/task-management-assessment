@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.api.app import create_app
 from app.infrastructure.security import JwtTokenService
 from app.infrastructure.settings import AuthSettings
+from tests.fakes import FakeRedis
 from tests.support.database import alembic_config, integration_database_url
 
 if not os.environ.get("TEST_POSTGRES_DB"):
@@ -92,6 +93,7 @@ def client(connection: Connection) -> Iterator[TestClient]:
     app = create_app(
         auth=AuthSettings(secret=TEST_JWT_SECRET),
         session_factory=savepoint_sessions(connection),
+        redis=FakeRedis(),
     )
     with TestClient(app) as test_client:
         yield test_client
