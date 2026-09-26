@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.api.dependencies import AuthServiceDep
+from app.api.rate_limits import limit_login
 from app.api.schemas import ErrorResponse, TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -12,7 +13,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post(
     "/token",
     response_model=TokenResponse,
-    responses={401: {"model": ErrorResponse, "description": "Bad credentials"}},
+    responses={
+        401: {"model": ErrorResponse, "description": "Bad credentials"},
+        429: {"model": ErrorResponse, "description": "Too many login attempts"},
+    },
+    dependencies=[Depends(limit_login)],
     summary="Log in with email (as username) and password",
 )
 def issue_token(

@@ -376,3 +376,28 @@
     absolute and the suggestion count was wrong; both corrected. A test now
     pins that a renamed demo task is recreated under its original title.
   - Results: `backend-tests` → 224 passed with deprecations as errors.
+
+## 2026-09-26 — Step 8: rate limiting
+
+- Tool: Claude Code (model `claude-opus-5-5`). Tests first in `5f28e17` (red:
+  `cannot import name 'RateLimitSettings'`).
+- Library decision, approved by the author: slowapi's decorators bind limits at
+  import time, but `create_app` receives settings per instance (tests use
+  different limits), and exempting `/api/health` needed slowapi's private
+  attributes. slowapi was replaced by the `limits` library it wraps
+  (`limits==5.8.0`, already in the lockfile as its dependency).
+- Behavior: login `5/minute` per client IP; all of `/api/v1` `120/minute` per
+  user, keyed by IP when the token is missing or invalid so junk tokens do not
+  get fresh counters; health and docs are not limited. 429 uses the standard
+  error body (`rate_limited`) plus `Retry-After`. Redis failures switch
+  counting to process memory for 30 s with a warning. `ProxyHeadersMiddleware`
+  trusts X-Forwarded-For only from `RATE_LIMIT_TRUSTED_PROXIES`; uvicorn's own
+  proxy-header handling is off. The test service now also gets real Redis
+  (database 15).
+- Fixed while implementing: a mypy error on the storage type, earlier tests
+  that build their own app needed rate-limit settings, and detect-secrets
+  flagged the fake password in a test constant.
+- Actual results: `backend-tests` → 235 passed with deprecations as errors.
+  Live in the `api` container: the 6th bad login returned 429 with
+  `Retry-After: 60` and the counter key was in Redis; with Redis stopped, the
+  6th attempt was still 429 and the log showed the in-memory fallback.

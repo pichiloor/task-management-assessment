@@ -1,6 +1,7 @@
 from datetime import timedelta
 
-from pydantic import Field, SecretStr
+from limits import parse
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -50,3 +51,24 @@ class RedisSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="REDIS_", hide_input_in_errors=True)
 
     url: str = Field(pattern=r"^rediss?://")
+
+
+class RateLimitSettings(BaseSettings):
+    """Limits use the `limits` notation, e.g. "5/minute". The storage defaults
+    to REDIS_URL. `trusted_proxies` lists the addresses (or CIDR ranges)
+    allowed to set X-Forwarded-For, comma-separated."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="RATE_LIMIT_", hide_input_in_errors=True
+    )
+
+    login: str = "5/minute"
+    api: str = "120/minute"
+    storage_uri: str | None = None
+    trusted_proxies: str = "127.0.0.1"
+
+    @field_validator("login", "api")
+    @classmethod
+    def _valid_limit(cls, value: str) -> str:
+        parse(value)  # raises ValueError on bad notation
+        return value

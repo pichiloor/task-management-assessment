@@ -60,7 +60,16 @@ services:
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       REDIS_URL: redis://redis:6379/0
     command:
-      ["uvicorn", "--factory", "app.api.app:create_app", "--host", "0.0.0.0", "--port", "8000"]
+      # X-Forwarded-For is handled inside the app (RATE_LIMIT_TRUSTED_PROXIES),
+      # so uvicorn's own proxy-header handling is turned off.
+      - uvicorn
+      - --factory
+      - app.api.app:create_app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --no-proxy-headers
     healthcheck:
       test:
         - CMD

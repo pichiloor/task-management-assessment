@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.app import create_app
 from app.infrastructure.repositories import SqlUserRepository
-from app.infrastructure.settings import AuthSettings
+from app.infrastructure.settings import AuthSettings, RateLimitSettings
 from tests.fakes import FakeRedis
 from tests.integration.conftest import (
     TEST_JWT_SECRET,
@@ -33,6 +33,7 @@ def failing_commit_client(connection: Connection) -> Iterator[TestClient]:
         auth=AuthSettings(secret=TEST_JWT_SECRET),
         session_factory=factory,
         redis=FakeRedis(),
+        rate_limit=RateLimitSettings(storage_uri="memory://"),
     )
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client

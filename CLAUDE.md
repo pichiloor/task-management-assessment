@@ -5,7 +5,16 @@
 Steps 1 (tooling), 2 (PostgreSQL and Redis in Compose), 3 (domain rules and
 use cases, TDD), 4 (SQLAlchemy repositories, Alembic) and 5 (JWT login,
 Argon2, auth endpoints) and 6 (task CRUD endpoints, `/api/health`, `api`
-Compose service) and 7 (demo seed) are done. Next: rate limiting.
+Compose service), 7 (demo seed) and 8 (rate limiting) are done. Next: Celery
+worker and CSV export.
+
+Rate limiting (`app/infrastructure/rate_limiter.py`, `app/api/rate_limits.py`)
+uses the `limits` library directly (slowapi was dropped with the author's
+approval: its decorators bind limits at import time, which does not fit
+per-app settings). Login: `RATE_LIMIT_LOGIN` per client IP; everything under
+`/api/v1`: `RATE_LIMIT_API` per user (IP for missing/invalid tokens). Counters
+in Redis, falling back to process memory for 30 s when Redis fails. The client
+IP comes from X-Forwarded-For only for `RATE_LIMIT_TRUSTED_PROXIES`.
 
 Demo data: `migrate` runs `python -m app.infrastructure.seed` after the
 migrations, with `SEED_DEMO_DATA=true` (the seed refuses to run without it).
