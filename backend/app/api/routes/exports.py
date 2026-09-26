@@ -1,9 +1,10 @@
 import os
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, BinaryIO
 
 from fastapi import APIRouter, Depends, Response, status
 from fastapi.responses import StreamingResponse
+from starlette.types import Receive, Scope, Send
 
 from app.api.dependencies import CurrentUser, ExportServiceDep
 from app.api.rate_limits import limit_exports
@@ -11,6 +12,27 @@ from app.api.routes.tasks import INVALID_RESPONSE
 from app.api.schemas import ErrorResponse, ExportCreate, ExportOut
 from app.application.tasks import TaskListFilters
 from app.domain.errors import GoneError
+
+
+class OpenFileResponse(StreamingResponse):
+    """Streams an already-open file and always closes it, including when the
+    client disconnects before or during the transfer."""
+
+    def __init__(self, handle: BinaryIO, **kwargs: Any) -> None:
+        self._handle = handle
+        super().__init__(self._chunks(), **kwargs)
+        self.headers["Content-Length"] = str(os.fstat(handle.fileno()).st_size)
+
+    def _chunks(self) -> Iterator[bytes]:
+        while block := self._handle.read(64 * 1024):
+            yield block
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._handle.close()
+
 
 router = APIRouter(
     prefix="/exports",
@@ -79,21 +101,13 @@ def download_export(
         raise GoneError(
             "export_file_missing", "The export file is not available"
         ) from None
-    size = os.fstat(handle.fileno()).st_size
-
-    def chunks() -> Iterator[bytes]:
-        with handle:
-            while block := handle.read(64 * 1024):
-                yield block
-
-    return StreamingResponse(
-        chunks(),
+    return OpenFileResponse(
+        handle,
         media_type="text/csv; charset=utf-8",
         headers={
             "Content-Disposition": (
                 f'attachment; filename="tasks-export-{export_id}.csv"'
             ),
-            "Content-Length": str(size),
             "Cache-Control": "no-store",
         },
     )
