@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
 import pytest
-from sqlalchemy import Engine, func, select, text
+from sqlalchemy import Engine, event, func, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -207,6 +207,58 @@ def test_concurrent_runs_are_serialized_by_a_lock(
         other.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": SEED_LOCK_KEY})
         session.execute(text("SET LOCAL lock_timeout = '200ms'"))
 
-        with pytest.raises(OperationalError):
+        with pytest.raises(OperationalError) as exc:
             seed(session)
         other.rollback()
+
+    assert exc.value.orig is not None
+    assert getattr(exc.value.orig, "sqlstate", None) == "55P03"  # lock_not_available
+    assert "pg_advisory_xact_lock" in str(exc.value.statement)
+
+
+def test_the_lock_is_taken_before_anything_is_read_or_written(
+    session: Session,
+) -> None:
+    statements: list[str] = []
+    event.listen(
+        session.connection(),
+        "before_cursor_execute",
+        lambda conn, cursor, statement, *args: statements.append(statement),
+    )
+
+    seed(session, bulk=5)
+
+    assert "pg_advisory_xact_lock" in statements[0]
+
+
+def test_renamed_demo_task_is_recreated_under_its_original_title(
+    session: Session,
+) -> None:
+    # Demo tasks are identified by creator and title: renaming one makes the
+    # next run restore the original. Documented behavior, pinned here.
+    seed(session)
+    base = count_tasks(session)
+    session.execute(
+        TaskRow.__table__.update()
+        .where(TaskRow.title == "Plan team offsite")
+        .values(title="Plan team offsite (moved)")
+    )
+
+    seed(session)
+
+    assert count_tasks(session) == base + 1
+
+
+def test_existing_task_check_reads_only_the_demo_keys(session: Session) -> None:
+    seed(session, bulk=300)
+    fetched: list[int] = []
+
+    def count_rows(conn: object, cursor: object, statement: str, *args: object) -> None:
+        if "FROM tasks" in statement and "title" in statement.split("FROM")[0]:
+            fetched.append(getattr(cursor, "rowcount", -1))
+
+    event.listen(session.connection(), "after_cursor_execute", count_rows)
+
+    seed(session)
+
+    assert fetched and max(fetched) <= 26
