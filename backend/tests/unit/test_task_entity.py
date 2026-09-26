@@ -1,4 +1,5 @@
-from datetime import UTC, date, datetime, timedelta
+from dataclasses import replace
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
@@ -119,3 +120,42 @@ class TestEdit:
         task.set_due_date(None, now=NOW)
 
         assert task.due_date is None
+
+
+class TestRejectedCallsLeaveTaskUntouched:
+    NAIVE = datetime(2026, 9, 26, 13, 0)
+
+    @pytest.mark.parametrize(
+        ("method", "value"),
+        [
+            ("rename", "Changed"),
+            ("describe", "Changed"),
+            ("set_due_date", date(2030, 1, 1)),
+            ("assign", 99),
+            ("change_status", TaskStatus.COMPLETED),
+        ],
+    )
+    def test_naive_timestamp_rejects_without_mutating(
+        self, method: str, value: object
+    ) -> None:
+        task = make_task()
+        before = replace(task)
+
+        with pytest.raises(ValueError):
+            getattr(task, method)(value, now=self.NAIVE)
+
+        assert task == before
+
+
+class TestTimestampsAreStoredInUtc:
+    def test_other_offsets_are_normalized_to_utc(self) -> None:
+        guayaquil = timezone(timedelta(hours=-5))
+        local_now = datetime(2026, 9, 26, 7, 0, tzinfo=guayaquil)
+
+        task = make_task(now=local_now)
+        task.change_status(TaskStatus.COMPLETED, now=local_now)
+
+        for stamp in (task.created_at, task.updated_at, task.completed_at):
+            assert stamp is not None
+            assert stamp.tzinfo is UTC
+            assert stamp == local_now

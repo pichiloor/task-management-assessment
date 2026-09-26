@@ -151,6 +151,18 @@ class TestUpdateByCreator:
 
         assert service.get(CREATOR, task_id).status is TaskStatus.PENDING
 
+    def test_failure_after_a_valid_change_persists_nothing(
+        self, service: TaskService
+    ) -> None:
+        task_id = create(service)
+
+        with pytest.raises(ValidationError):
+            service.update(
+                CREATOR, task_id, TaskChanges(title="Valid", assignee_id=INACTIVE)
+            )
+
+        assert service.get(CREATOR, task_id).title == "Write report"
+
 
 class TestUpdateByAssignee:
     def test_assignee_can_change_status(self, service: TaskService) -> None:
@@ -230,3 +242,9 @@ def test_assignable_users_are_active_only(service: TaskService) -> None:
     ids = [u.id for u in service.assignable_users()]
 
     assert ids == [CREATOR, ASSIGNEE, OUTSIDER]
+
+
+def test_assignable_users_expose_only_id_and_name(service: TaskService) -> None:
+    summary = service.assignable_users()[0]
+
+    assert vars(summary) == {"id": CREATOR, "name": f"User {CREATOR}"}
