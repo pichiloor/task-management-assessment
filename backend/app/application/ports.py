@@ -1,0 +1,42 @@
+"""Interfaces the use cases depend on; infrastructure provides the implementations."""
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import date, datetime
+from typing import Protocol
+
+from app.domain.task import Task, TaskStatus
+from app.domain.user import User
+
+Clock = Callable[[], datetime]
+
+
+@dataclass(frozen=True)
+class TaskQuery:
+    """Already-validated listing request. Results must be ordered by
+    due date (nulls last), then ID, so pages are stable."""
+
+    viewer_id: int
+    status: TaskStatus | None
+    due_from: date | None
+    due_to: date | None
+    page: int
+    page_size: int
+
+
+class TaskRepository(Protocol):
+    def add(self, task: Task) -> Task: ...
+
+    def get(self, task_id: int) -> Task | None: ...
+
+    def save(self, task: Task) -> Task: ...
+
+    def delete(self, task_id: int) -> None: ...
+
+    def list(self, query: TaskQuery) -> tuple[list[Task], int]: ...
+
+
+class UserRepository(Protocol):
+    def get(self, user_id: int) -> User | None: ...
+
+    def list_active(self) -> list[User]: ...
