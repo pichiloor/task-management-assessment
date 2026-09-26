@@ -131,16 +131,25 @@ def test_repositories_never_commit(session: Session, me: int) -> None:
     event.listen(session, "after_commit", commits.append)
     tasks = SqlTaskRepository(session)
 
+    users = SqlUserRepository(session)
+
     task = tasks.add(new_task(me))
+    tasks.get(task.id or 0)
+    tasks.get(999_999)
     task.rename("Renamed", now=NOW)
     tasks.save(task)
-    tasks.list(query(me))
+    tasks.list(query(me, status=TaskStatus.PENDING, due_from=date(2026, 1, 1)))
     tasks.delete(task.id or 0)
-    SqlUserRepository(session).create(
+    tasks.delete(999_999)
+    users.create(
         email="x@example.com",
         name="X",
         password_hash="h",  # pragma: allowlist secret
     )
+    users.get(me)
+    users.get(999_999)
+    users.get_by_email("x@example.com")
+    users.list_active()
 
     assert commits == []
 
