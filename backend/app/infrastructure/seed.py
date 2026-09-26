@@ -180,8 +180,9 @@ def seed_demo_data(
 
     # A curated task is identified by its creator and title: deleted or renamed
     # demo tasks come back, and a user's own task only suppresses a demo task
-    # if it has the same creator and title. Only the 26 demo keys are read, so
-    # the cost does not grow with --bulk rows.
+    # if it has the same creator and title. Only the 26 demo keys are returned,
+    # so the rows transferred do not grow with --bulk (the database may still
+    # scan more to find them).
     wanted = {(ids[spec.creator], spec.title) for spec in CURATED + BACKLOG}
     existing: set[tuple[int, str]] = {
         (creator_id, title)

@@ -370,7 +370,8 @@
     SQLSTATE `55P03` on the lock statement, and a second test asserts the lock
     is the first statement the seed executes.
   - Low: every run read all task titles of the demo users, growing with
-    `--bulk`. It now queries only the 26 expected (creator, title) keys.
+    `--bulk`. It now returns only the 26 expected (creator, title) keys
+    (Codex noted this bounds the rows returned, not the database's own scan).
   - Low: the "own tasks no longer block anything" wording above was too
     absolute and the suggestion count was wrong; both corrected. A test now
     pins that a renamed demo task is recreated under its original title.
