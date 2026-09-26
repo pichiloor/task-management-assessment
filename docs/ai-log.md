@@ -240,5 +240,6 @@
   passed; host 119 passed.
 - Second follow-up: Codex noted the engine could still leak if `create_app`
   failed after creating it (for example while hashing). The engine is now
-  created last, after everything that can fail (test first in `42d28a2`,
+  created after settings validation, hashing and route setup; only the
+  session factory and `app.state` assignments follow it (test first in `42d28a2`,
   1 failed). Results: Docker 159 passed; host 120 passed.
