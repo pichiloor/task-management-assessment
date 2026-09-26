@@ -10,11 +10,16 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.application.auth import AuthService
+from app.application.exports import ExportService
 from app.application.ports import TokenService
 from app.application.tasks import TaskService
 from app.domain.errors import AuthenticationError
 from app.domain.user import User
-from app.infrastructure.repositories import SqlTaskRepository, SqlUserRepository
+from app.infrastructure.repositories import (
+    SqlTaskRepository,
+    SqlUserRepository,
+    sql_unit_of_work,
+)
 
 TOKEN_URL = "/api/v1/auth/token"
 
@@ -77,3 +82,18 @@ def get_task_service(session: SessionDep) -> TaskService:
 
 
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
+
+
+def get_export_service(request: Request) -> ExportService:
+    # Manages its own transactions: the export row must be committed before
+    # the job is published, not at the end of the request.
+    state = request.app.state
+    return ExportService(
+        uow=sql_unit_of_work(state.session_factory),
+        queue=state.export_queue,
+        files=state.export_files,
+        clock=utc_now,
+    )
+
+
+ExportServiceDep = Annotated[ExportService, Depends(get_export_service)]

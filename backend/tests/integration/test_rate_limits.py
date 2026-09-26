@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.api.app import create_app
 from app.infrastructure.repositories import SqlUserRepository
 from app.infrastructure.settings import AuthSettings, RateLimitSettings
-from tests.fakes import FakeRedis
+from tests.fakes import FakeExportQueue, FakeRedis
 from tests.integration.conftest import (
     TEST_JWT_SECRET,
     savepoint_sessions,
@@ -43,6 +43,7 @@ def make_client(connection: Connection) -> MakeClient:
             session_factory=savepoint_sessions(connection),
             redis=FakeRedis(),
             rate_limit=settings,
+            export_queue=FakeExportQueue(),
         )
         with TestClient(app, client=(client_ip, 50000)) as client:
             yield client
@@ -127,6 +128,23 @@ class TestApi:
             ]
 
         assert codes == [401, 401, 429]
+
+    def test_export_requests_have_their_own_per_user_limit(
+        self, make_client: MakeClient, session: Session
+    ) -> None:
+        ana, bo = auth_header(session, "ana@x.io"), auth_header(session, "bo@x.io")
+        with make_client(memory(exports="2/minute")) as client:
+            codes = [
+                client.post("/api/v1/exports", json={}, headers=ana).status_code
+                for _ in range(3)
+            ]
+            other_user = client.post("/api/v1/exports", json={}, headers=bo)
+            # Only requesting is limited this tightly; reading is not.
+            reads = client.get("/api/v1/tasks", headers=ana)
+
+        assert codes == [202, 202, 429]
+        assert other_user.status_code == 202
+        assert reads.status_code == 200
 
     def test_health_and_docs_are_not_limited(self, make_client: MakeClient) -> None:
         with make_client(memory(api="1/minute")) as client:

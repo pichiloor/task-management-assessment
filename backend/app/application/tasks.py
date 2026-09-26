@@ -127,14 +127,15 @@ class TaskService:
 
     # Defined last: the method name shadows the builtin `list` in the class body.
     def list(self, actor_id: int, filters: TaskListFilters) -> Page:
-        query = _to_query(actor_id, filters)
+        query = to_task_query(actor_id, filters)
         items, total = self._tasks.list(query)
         return Page(
             items=items, total=total, page=query.page, page_size=query.page_size
         )
 
 
-def _to_query(viewer_id: int, f: TaskListFilters) -> TaskQuery:
+def to_task_query(viewer_id: int, f: TaskListFilters) -> TaskQuery:
+    """Validates listing filters (shared by the listing and CSV exports)."""
     if f.page < 1:
         raise ValidationError("invalid_page", "Page must be 1 or greater")
     if not 1 <= f.page_size <= MAX_PAGE_SIZE:

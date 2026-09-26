@@ -1,10 +1,13 @@
 """Interfaces the use cases depend on; infrastructure provides the implementations."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import date, datetime
+from pathlib import Path
 from typing import Protocol
 
+from app.domain.export import Export
 from app.domain.task import Task, TaskStatus
 from app.domain.user import User
 
@@ -38,6 +41,11 @@ class TaskRepository(Protocol):
 
     def list(self, query: TaskQuery) -> tuple[list[Task], int]: ...
 
+    def iter_all(self, query: TaskQuery) -> Iterator[Task]:
+        """Every matching task in listing order; page and page_size are
+        ignored. Must be consumed inside the transaction that produced it."""
+        ...
+
 
 class UserRepository(Protocol):
     def get(self, user_id: int) -> User | None: ...
@@ -58,4 +66,51 @@ class TokenService(Protocol):
 
     def subject(self, token: str) -> int | None:
         """User ID of a valid, unexpired token; None otherwise."""
+        ...
+
+
+class ExportRepository(Protocol):
+    def add(self, export: Export) -> Export: ...
+
+    def get(self, export_id: int) -> Export | None: ...
+
+    def get_for_update(self, export_id: int) -> Export | None:
+        """Like `get`, but locks the export until the transaction ends, so
+        two workers never process the same export at the same time."""
+        ...
+
+    def save(self, export: Export) -> Export: ...
+
+
+class UnitOfWork(Protocol):
+    @property
+    def exports(self) -> ExportRepository: ...
+
+    @property
+    def tasks(self) -> TaskRepository: ...
+
+
+# Each call opens one transaction: committed when the block exits normally,
+# rolled back when it raises.
+UnitOfWorkFactory = Callable[[], AbstractContextManager[UnitOfWork]]
+
+
+class QueueUnavailableError(Exception):
+    """The job could not be handed to the queue."""
+
+
+class ExportQueue(Protocol):
+    def publish(self, export_id: int) -> None:
+        """Hands the export to a worker; raises QueueUnavailableError."""
+        ...
+
+
+class ExportFiles(Protocol):
+    def write(self, export_id: int, tasks: Iterable[Task]) -> int:
+        """Writes (or atomically replaces) the export file; returns the row
+        count."""
+        ...
+
+    def path(self, export_id: int) -> Path | None:
+        """The export file, or None if it does not exist."""
         ...

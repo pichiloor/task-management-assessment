@@ -5,15 +5,23 @@ return domain dataclasses built from rows, never ORM objects, so callers get
 detached copies as the TaskRepository contract requires.
 """
 
-from datetime import UTC
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.application.ports import TaskQuery
+from app.application.ports import TaskQuery, UnitOfWork, UnitOfWorkFactory
+from app.domain.export import Export, ExportStatus
 from app.domain.task import Task, TaskStatus
 from app.domain.user import User
-from app.infrastructure.models import TaskRow, UserRow
+from app.infrastructure.models import ExportRow, TaskRow, UserRow
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    return value.astimezone(UTC) if value else None
 
 
 def _to_task(row: TaskRow) -> Task:
@@ -83,30 +91,50 @@ class SqlTaskRepository:
             self._session.flush()
 
     def list(self, query: TaskQuery) -> tuple[list[Task], int]:
-        conditions = [
-            or_(
-                TaskRow.creator_id == query.viewer_id,
-                TaskRow.assignee_id == query.viewer_id,
-            )
-        ]
-        if query.status is not None:
-            conditions.append(TaskRow.status == query.status.value)
-        if query.due_from is not None:
-            conditions.append(TaskRow.due_date >= query.due_from)
-        if query.due_to is not None:
-            conditions.append(TaskRow.due_date <= query.due_to)
-
+        conditions = _conditions(query)
         total = self._session.scalar(
             select(func.count()).select_from(TaskRow).where(*conditions)
         )
         rows = self._session.scalars(
             select(TaskRow)
             .where(*conditions)
-            .order_by(TaskRow.due_date.asc().nulls_last(), TaskRow.id.asc())
+            .order_by(*_LISTING_ORDER)
             .limit(query.page_size)
             .offset((query.page - 1) * query.page_size)
         )
         return [_to_task(row) for row in rows], total or 0
+
+    def iter_all(self, query: TaskQuery) -> Iterator[Task]:
+        # Streamed in batches (server-side cursor), so memory stays flat for
+        # large exports.
+        rows = self._session.scalars(
+            select(TaskRow)
+            .where(*_conditions(query))
+            .order_by(*_LISTING_ORDER)
+            .execution_options(yield_per=500)
+        )
+        for row in rows:
+            yield _to_task(row)
+
+
+_LISTING_ORDER = (TaskRow.due_date.asc().nulls_last(), TaskRow.id.asc())
+
+
+def _conditions(query: TaskQuery) -> list[ColumnElement[bool]]:
+    """Visibility (creator or assignee) plus the optional filters."""
+    conditions = [
+        or_(
+            TaskRow.creator_id == query.viewer_id,
+            TaskRow.assignee_id == query.viewer_id,
+        )
+    ]
+    if query.status is not None:
+        conditions.append(TaskRow.status == query.status.value)
+    if query.due_from is not None:
+        conditions.append(TaskRow.due_date >= query.due_from)
+    if query.due_to is not None:
+        conditions.append(TaskRow.due_date <= query.due_to)
+    return conditions
 
 
 class SqlUserRepository:
@@ -141,3 +169,86 @@ class SqlUserRepository:
         self._session.add(row)
         self._session.flush()
         return _to_user(row)
+
+
+def _to_export(row: ExportRow) -> Export:
+    return Export(
+        id=row.id,
+        requester_id=row.requester_id,
+        task_status=TaskStatus(row.task_status) if row.task_status else None,
+        due_from=row.due_from,
+        due_to=row.due_to,
+        status=ExportStatus(row.status),
+        created_at=row.created_at.astimezone(UTC),
+        finished_at=_utc(row.finished_at),
+        row_count=row.row_count,
+        expires_at=_utc(row.expires_at),
+        error_code=row.error_code,
+    )
+
+
+def _copy_export_into(row: ExportRow, export: Export) -> None:
+    row.requester_id = export.requester_id
+    row.task_status = export.task_status.value if export.task_status else None
+    row.due_from = export.due_from
+    row.due_to = export.due_to
+    row.status = export.status.value
+    row.created_at = export.created_at
+    row.finished_at = export.finished_at
+    row.row_count = export.row_count
+    row.expires_at = export.expires_at
+    row.error_code = export.error_code
+
+
+class SqlExportRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def add(self, export: Export) -> Export:
+        row = ExportRow()
+        _copy_export_into(row, export)
+        self._session.add(row)
+        self._session.flush()
+        return _to_export(row)
+
+    def get(self, export_id: int) -> Export | None:
+        row = self._session.get(ExportRow, export_id)
+        return _to_export(row) if row else None
+
+    def get_for_update(self, export_id: int) -> Export | None:
+        # populate_existing: re-read the locked row even if the session
+        # already holds an older copy of it.
+        row = self._session.scalar(
+            select(ExportRow)
+            .where(ExportRow.id == export_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return _to_export(row) if row else None
+
+    def save(self, export: Export) -> Export:
+        if export.id is None:
+            raise ValueError("cannot save an export that was never added")
+        row = self._session.get_one(ExportRow, export.id)
+        _copy_export_into(row, export)
+        self._session.flush()
+        return _to_export(row)
+
+
+@dataclass(frozen=True)
+class SqlUnitOfWork:
+    exports: SqlExportRepository
+    tasks: SqlTaskRepository
+
+
+def sql_unit_of_work(session_factory: Callable[[], Session]) -> UnitOfWorkFactory:
+    """Each call opens a session and a transaction around the block."""
+
+    @contextmanager
+    def open_transaction() -> Iterator[UnitOfWork]:
+        with session_factory() as session, session.begin():
+            yield SqlUnitOfWork(
+                exports=SqlExportRepository(session), tasks=SqlTaskRepository(session)
+            )
+
+    return open_transaction

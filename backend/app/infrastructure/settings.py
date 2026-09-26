@@ -1,4 +1,5 @@
 from datetime import timedelta
+from pathlib import Path
 
 from limits import parse_many
 from limits.util import SINGLE_EXPR
@@ -54,6 +55,32 @@ class RedisSettings(BaseSettings):
     url: str = Field(pattern=r"^rediss?://")
 
 
+class QueueSettings(BaseSettings):
+    """Celery broker. Defaults to REDIS_URL; Compose uses its own Redis
+    database so queue keys never mix with rate-limit counters."""
+
+    model_config = SettingsConfigDict(env_prefix="CELERY_", hide_input_in_errors=True)
+
+    broker_url: str | None = Field(default=None, pattern=r"^rediss?://")
+
+    def resolved_broker_url(self) -> str:
+        return self.broker_url or RedisSettings().url
+
+
+class ExportSettings(BaseSettings):
+    """Where CSV exports are written (a volume shared by the API and the
+    worker, outside any public path) and how long they can be downloaded."""
+
+    model_config = SettingsConfigDict(env_prefix="EXPORT_", hide_input_in_errors=True)
+
+    dir: Path = Path("/data/exports")
+    ttl_hours: int = Field(default=24, ge=1, le=24 * 7)
+
+    @property
+    def ttl(self) -> timedelta:
+        return timedelta(hours=self.ttl_hours)
+
+
 class RateLimitSettings(BaseSettings):
     """Limits use the `limits` notation, e.g. "5/minute". The storage defaults
     to REDIS_URL. `trusted_proxies` lists the addresses (or CIDR ranges)
@@ -65,11 +92,12 @@ class RateLimitSettings(BaseSettings):
 
     login: str = "5/minute"
     api: str = "120/minute"
+    exports: str = "5/minute"
     storage_uri: str | None = None
     trusted_proxies: str = "127.0.0.1"
     key_prefix: str = Field(default="task-management", pattern=r"^[A-Za-z0-9_-]+$")
 
-    @field_validator("login", "api")
+    @field_validator("login", "api", "exports")
     @classmethod
     def _single_positive_limit(cls, value: str) -> str:
         # `limits` silently keeps only the first of "a; b" and rewrites a zero

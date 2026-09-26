@@ -8,6 +8,7 @@ every test runs inside a transaction that is rolled back afterwards.
 import os
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from alembic import command
@@ -18,8 +19,12 @@ from sqlalchemy.orm import Session
 
 from app.api.app import create_app
 from app.infrastructure.security import JwtTokenService
-from app.infrastructure.settings import AuthSettings, RateLimitSettings
-from tests.fakes import FakeRedis
+from app.infrastructure.settings import (
+    AuthSettings,
+    ExportSettings,
+    RateLimitSettings,
+)
+from tests.fakes import FakeExportQueue, FakeRedis
 from tests.support.database import alembic_config, integration_database_url
 
 if not os.environ.get("TEST_POSTGRES_DB"):
@@ -89,12 +94,26 @@ def savepoint_sessions(connection: Connection) -> Callable[[], Session]:
 
 
 @pytest.fixture
-def client(connection: Connection) -> Iterator[TestClient]:
+def export_queue() -> FakeExportQueue:
+    return FakeExportQueue()
+
+
+@pytest.fixture
+def export_dir(tmp_path: Path) -> Path:
+    return tmp_path / "exports"
+
+
+@pytest.fixture
+def client(
+    connection: Connection, export_queue: FakeExportQueue, export_dir: Path
+) -> Iterator[TestClient]:
     app = create_app(
         auth=AuthSettings(secret=TEST_JWT_SECRET),
         session_factory=savepoint_sessions(connection),
         redis=FakeRedis(),
         rate_limit=RateLimitSettings(storage_uri="memory://"),
+        export_queue=export_queue,
+        exports=ExportSettings(dir=export_dir),
     )
     with TestClient(app) as test_client:
         yield test_client

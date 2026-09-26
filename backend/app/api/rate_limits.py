@@ -43,6 +43,12 @@ def limit_api(request: Request) -> None:
     _enforce(request, request.app.state.limits.api, f"api:{_user_or_ip(request)}")
 
 
+def limit_exports(request: Request) -> None:
+    _enforce(
+        request, request.app.state.limits.exports, f"exports:{_user_or_ip(request)}"
+    )
+
+
 def limit_login(request: Request) -> None:
     _enforce(request, request.app.state.limits.login, f"login:{_client_ip(request)}")
 

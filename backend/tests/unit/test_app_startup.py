@@ -72,7 +72,9 @@ def test_no_engine_is_created_if_setup_fails_first(
 ) -> None:
     monkeypatch.setenv("JWT_SECRET", "k" * 32)
     created: list[object] = []
-    monkeypatch.setattr("app.api.app.create_engine", lambda *a, **k: created.append(a))
+    monkeypatch.setattr(
+        "app.infrastructure.database.create_engine", lambda *a, **k: created.append(a)
+    )
 
     def broken_hash(self: object, password: str) -> str:
         raise RuntimeError("hashing unavailable")
@@ -120,7 +122,7 @@ def test_database_connections_have_bounded_waits(
         calls.append(kwargs)
         return type("E", (), {"dispose": lambda self: None})()
 
-    monkeypatch.setattr("app.api.app.create_engine", fake_create_engine)
+    monkeypatch.setattr("app.infrastructure.database.create_engine", fake_create_engine)
 
     create_app()
 
@@ -135,3 +137,25 @@ def test_database_connections_have_bounded_waits(
     assert isinstance(options, str)
     assert "statement_timeout=" in options
     assert "lock_timeout=" in options
+
+
+def test_celery_app_created_by_the_app_is_closed_on_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("JWT_SECRET", "k" * 32)
+    app = create_app()
+    closed: list[bool] = []
+    monkeypatch.setattr(app.state.owned_celery, "close", lambda: closed.append(True))
+
+    with TestClient(app):
+        assert closed == []
+
+    assert closed == [True]
+
+
+def test_invalid_broker_url_stops_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("JWT_SECRET", "k" * 32)
+    monkeypatch.setenv("CELERY_BROKER_URL", "amqp://guest@rabbit//")
+
+    with pytest.raises(ValidationError):
+        create_app()

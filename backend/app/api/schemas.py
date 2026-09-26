@@ -3,6 +3,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema, model_validator
 
+from app.domain.export import Export, ExportStatus
 from app.domain.task import DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH, TaskStatus
 
 
@@ -90,6 +91,54 @@ class TaskPage(BaseModel):
     page: int
     page_size: int
     pages: int
+
+
+class ExportCreate(BaseModel):
+    """Same filters as the task listing, without paging. All optional."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: TaskStatus | None = None
+    due_date: date | None = None
+    due_from: date | None = None
+    due_to: date | None = None
+
+
+class ExportFilters(BaseModel):
+    status: TaskStatus | None
+    due_from: date | None
+    due_to: date | None
+
+
+class ExportOut(BaseModel):
+    id: int
+    status: ExportStatus
+    filters: ExportFilters
+    row_count: int | None
+    error_code: str | None
+    created_at: datetime
+    finished_at: datetime | None
+    expires_at: datetime | None
+    download_url: str | None
+
+    @classmethod
+    def from_export(cls, export: Export) -> "ExportOut":
+        completed = export.status is ExportStatus.COMPLETED
+        return cls(
+            id=export.id or 0,
+            status=export.status,
+            filters=ExportFilters(
+                status=export.task_status,
+                due_from=export.due_from,
+                due_to=export.due_to,
+            ),
+            row_count=export.row_count,
+            error_code=export.error_code,
+            created_at=export.created_at,
+            finished_at=export.finished_at,
+            expires_at=export.expires_at,
+            download_url=f"/api/v1/exports/{export.id}/download" if completed else None,
+        )
 
 
 class HealthResponse(BaseModel):

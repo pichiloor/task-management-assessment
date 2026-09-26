@@ -1,4 +1,4 @@
-# Pending: worker and nginx.
+# Pending: nginx.
 # PostgreSQL and Redis are internal only: no host ports are published.
 name: task-management
 
@@ -8,6 +8,13 @@ x-database-env: &database-env
   POSTGRES_DB: ${POSTGRES_DB:?Run scripts/setup-env.sh first}
   POSTGRES_HOST: db
   POSTGRES_PORT: "5432"
+
+# Settings shared by the API (publishes jobs, serves files) and the worker.
+x-export-env: &export-env
+  # Its own Redis database, so queue keys never mix with rate-limit counters.
+  CELERY_BROKER_URL: redis://redis:6379/1
+  EXPORT_DIR: /data/exports
+  EXPORT_TTL_HOURS: ${EXPORT_TTL_HOURS:-24}
 
 services:
   db:
@@ -55,12 +62,13 @@ services:
       target: runtime
     restart: unless-stopped
     environment:
-      <<: *database-env
+      <<: [*database-env, *export-env]
       JWT_SECRET: ${JWT_SECRET:?Run scripts/setup-env.sh first}
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       REDIS_URL: redis://redis:6379/0
       RATE_LIMIT_LOGIN: ${RATE_LIMIT_LOGIN:-5/minute}
       RATE_LIMIT_API: ${RATE_LIMIT_API:-120/minute}
+      RATE_LIMIT_EXPORTS: ${RATE_LIMIT_EXPORTS:-5/minute}
       RATE_LIMIT_KEY_PREFIX: ${RATE_LIMIT_KEY_PREFIX:-task-management}
       # Set to nginx's address when it is added in front of the API.
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1}
@@ -75,6 +83,8 @@ services:
       - --port
       - "8000"
       - --no-proxy-headers
+    volumes:
+      - exports:/data/exports
     healthcheck:
       test:
         - CMD
@@ -85,6 +95,39 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Celery worker for CSV exports. Reads jobs from Redis, tasks from
+  # PostgreSQL, and writes files to the volume the API serves them from.
+  worker:
+    build:
+      context: ./backend
+      target: runtime
+    restart: unless-stopped
+    environment:
+      <<: [*database-env, *export-env]
+    command:
+      - celery
+      - --app=app.infrastructure.worker_main
+      - worker
+      - --loglevel=INFO
+      - --concurrency=2
+    volumes:
+      - exports:/data/exports
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - celery --app=app.infrastructure.worker_main inspect ping --destination "celery@$$HOSTNAME" --timeout 5
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -113,3 +156,4 @@ services:
 
 volumes:
   db-data:
+  exports:

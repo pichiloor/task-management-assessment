@@ -4,7 +4,7 @@ from typing import Protocol
 
 from fastapi import APIRouter, Depends, FastAPI
 from redis import Redis
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
@@ -16,15 +16,22 @@ from app.api.rate_limits import (
     register_rate_limit_handler,
 )
 from app.api.routes import auth as auth_routes
+from app.api.routes import exports as export_routes
 from app.api.routes import health, tasks, users
+from app.application.ports import ExportQueue
+from app.infrastructure.database import create_database_engine
+from app.infrastructure.export_files import CsvExportFiles
 from app.infrastructure.rate_limiter import RateLimiter
 from app.infrastructure.security import Argon2PasswordHasher, JwtTokenService
 from app.infrastructure.settings import (
     AuthSettings,
     DatabaseSettings,
+    ExportSettings,
+    QueueSettings,
     RateLimitSettings,
     RedisSettings,
 )
+from app.infrastructure.worker import CeleryExportQueue, create_celery
 
 
 class RedisClient(Protocol):
@@ -37,13 +44,18 @@ def create_app(
     session_factory: Callable[[], Session] | None = None,
     redis: RedisClient | None = None,
     rate_limit: RateLimitSettings | None = None,
+    export_queue: ExportQueue | None = None,
+    exports: ExportSettings | None = None,
 ) -> FastAPI:
     """Builds the API. Configuration is read and validated here, so a missing
     or weak JWT secret stops the process at startup. Tests pass their own
-    settings, session factory, Redis client and rate-limit settings."""
+    settings, session factory, Redis client, rate-limit settings and export
+    queue."""
     auth = auth or AuthSettings()
     database = DatabaseSettings() if session_factory is None else None
     rate_limit = rate_limit or RateLimitSettings()
+    exports = exports or ExportSettings()
+    broker_url = QueueSettings().resolved_broker_url() if export_queue is None else None
     needs_redis_url = redis is None or rate_limit.storage_uri is None
     redis_url = RedisSettings().url if needs_redis_url else None
     hasher = Argon2PasswordHasher()
@@ -64,6 +76,8 @@ def create_app(
                 app.state.engine.dispose()
             if app.state.owned_redis is not None:
                 app.state.owned_redis.close()
+            if app.state.owned_celery is not None:
+                app.state.owned_celery.close()
 
     app = FastAPI(
         lifespan=lifespan,
@@ -89,6 +103,7 @@ def create_app(
     v1.include_router(auth_routes.router)
     v1.include_router(users.router)
     v1.include_router(tasks.router)
+    v1.include_router(export_routes.router)
     app.include_router(v1)
     app.include_router(health.router)
 
@@ -96,21 +111,7 @@ def create_app(
     # startup never leaves a pool that the lifespan would not close.
     engine: Engine | None = None
     if database is not None:
-        engine = create_engine(
-            database.url,
-            pool_pre_ping=True,
-            pool_timeout=5,  # seconds waiting for a free pooled connection
-            connect_args={
-                "connect_timeout": 3,  # seconds to establish a connection
-                # ms of unacknowledged data before the socket is dropped: a
-                # server that stops answering cannot hang a request forever.
-                "tcp_user_timeout": 5000,
-                # Server-side bounds for slow queries and lock waits. A server
-                # that is fully frozen yet still ACKs TCP is not bounded here:
-                # psycopg has no client-side per-query timeout (documented).
-                "options": "-c statement_timeout=10000 -c lock_timeout=5000",
-            },
-        )
+        engine = create_database_engine(database.url)
         session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     storage_uri = rate_limit.storage_uri or redis_url
     assert storage_uri is not None
@@ -122,6 +123,15 @@ def create_app(
             redis_url, socket_connect_timeout=1, socket_timeout=1
         )
         redis = owned_redis
+    # Creating the Celery app opens no connection; it connects on publish.
+    owned_celery = None
+    if export_queue is None:
+        assert broker_url is not None
+        owned_celery = create_celery(broker_url)
+        export_queue = CeleryExportQueue(owned_celery)
+    app.state.owned_celery = owned_celery
+    app.state.export_queue = export_queue
+    app.state.export_files = CsvExportFiles(exports.dir)
     app.state.engine = engine
     app.state.owned_redis = owned_redis
     app.state.redis = redis

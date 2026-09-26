@@ -9,8 +9,14 @@ from sqlalchemy.orm import Session
 from app.application.ports import TaskQuery
 from app.application.tasks import NewTask, TaskChanges, TaskService
 from app.domain.errors import ValidationError
+from app.domain.export import Export, ExportStatus
 from app.domain.task import Task, TaskStatus
-from app.infrastructure.repositories import SqlTaskRepository, SqlUserRepository
+from app.infrastructure.repositories import (
+    SqlExportRepository,
+    SqlTaskRepository,
+    SqlUserRepository,
+    sql_unit_of_work,
+)
 from tests.fakes import FakeClock
 
 NOW = datetime(2026, 9, 26, 12, 0, tzinfo=UTC)
@@ -57,6 +63,18 @@ def new_task(creator: int, **overrides: object) -> Task:
     }
     fields.update(overrides)
     return Task.create(**fields)  # type: ignore[arg-type]
+
+
+def new_export(requester: int, **overrides: object) -> Export:
+    fields: dict[str, object] = {
+        "requester_id": requester,
+        "task_status": None,
+        "due_from": None,
+        "due_to": None,
+        "now": NOW,
+    }
+    fields.update(overrides)
+    return Export.request(**fields)  # type: ignore[arg-type]
 
 
 def query(viewer: int, **overrides: object) -> TaskQuery:
@@ -139,6 +157,13 @@ def test_repositories_never_commit(session: Session, me: int) -> None:
     task.rename("Renamed", now=NOW)
     tasks.save(task)
     tasks.list(query(me, status=TaskStatus.PENDING, due_from=date(2026, 1, 1)))
+    list(tasks.iter_all(query(me)))
+    exports = SqlExportRepository(session)
+    export = exports.add(new_export(me))
+    exports.get(export.id or 0)
+    exports.get_for_update(export.id or 0)
+    export.fail("export_failed", now=NOW)
+    exports.save(export)
     tasks.delete(task.id or 0)
     tasks.delete(999_999)
     users.create(
@@ -298,3 +323,106 @@ def test_failed_patch_persists_nothing_with_sql_repositories(
     session.expire_all()
 
     assert service.get(me, task.id or 0).title == "Original"
+
+
+class TestIterAll:
+    def test_returns_every_match_in_listing_order_ignoring_paging(
+        self, tasks: SqlTaskRepository, me: int, other: int
+    ) -> None:
+        no_date = tasks.add(new_task(me)).id
+        late = tasks.add(new_task(other, assignee_id=me, due_date=date(2026, 12, 1))).id
+        early = tasks.add(new_task(me, due_date=date(2026, 9, 1))).id
+        tasks.add(new_task(other, due_date=date(2026, 9, 2)))  # not visible
+        tasks.add(new_task(me, due_date=date(2027, 1, 1), title="Other status"))
+        done = new_task(me, due_date=date(2027, 1, 1))
+        done.change_status(TaskStatus.COMPLETED, now=NOW)
+        tasks.add(done)
+
+        all_mine = [t.id for t in tasks.iter_all(query(me, page=3, page_size=1))]
+        pending = [
+            t.id
+            for t in tasks.iter_all(
+                query(me, status=TaskStatus.PENDING, due_to=date(2026, 12, 31))
+            )
+        ]
+
+        assert all_mine[:3] == [early, late] + all_mine[2:3]
+        assert len(all_mine) == 5 and all_mine[-1] == no_date
+        assert pending == [early, late]
+
+
+class TestExports:
+    def test_all_fields_survive_a_round_trip(self, session: Session, me: int) -> None:
+        exports = SqlExportRepository(session)
+        export = new_export(
+            me,
+            task_status=TaskStatus.IN_PROGRESS,
+            due_from=date(2026, 9, 1),
+            due_to=date(2026, 9, 30),
+        )
+        stored = exports.add(export)
+        stored.complete(
+            row_count=3, now=NOW + timedelta(minutes=1), ttl=timedelta(hours=24)
+        )
+        exports.save(stored)
+        session.expire_all()
+
+        loaded = exports.get(stored.id or 0)
+
+        assert loaded == stored
+        assert replace(loaded, id=None).requester_id == me  # type: ignore[arg-type]
+        assert loaded is not None and loaded.status is ExportStatus.COMPLETED
+        assert loaded.expires_at == NOW + timedelta(minutes=1, hours=24)
+        assert loaded.created_at.tzinfo is not None
+        assert exports.get(999_999) is None
+        assert exports.get_for_update(999_999) is None
+
+    def test_get_for_update_locks_the_row(
+        self, connection: Connection, session: Session, me: int
+    ) -> None:
+        export_id = SqlExportRepository(session).add(new_export(me)).id
+        statements: list[str] = []
+        event.listen(
+            connection,
+            "before_cursor_execute",
+            lambda *args: statements.append(args[2]),
+        )
+
+        found = SqlExportRepository(session).get_for_update(export_id or 0)
+
+        # Even though the row is already in the session's identity map.
+        assert found is not None and found.id == export_id
+        assert any("FOR UPDATE" in sql for sql in statements)
+
+    def test_returned_exports_are_detached_copies(
+        self, session: Session, me: int
+    ) -> None:
+        exports = SqlExportRepository(session)
+        export = exports.add(new_export(me))
+        loaded = exports.get(export.id or 0)
+        assert loaded is not None
+
+        loaded.fail("export_failed", now=NOW)
+        session.flush()
+        session.expire_all()
+
+        assert exports.get(export.id or 0).status is ExportStatus.PENDING  # type: ignore[union-attr]
+
+
+def test_unit_of_work_commits_on_success_and_rolls_back_on_error(
+    connection: Connection, me: int, session: Session
+) -> None:
+    session.commit()  # make `me` visible to the unit-of-work sessions
+    factory = sql_unit_of_work(
+        lambda: Session(bind=connection, join_transaction_mode="create_savepoint")
+    )
+
+    with factory() as tx:
+        kept = tx.exports.add(new_export(me)).id
+    with pytest.raises(RuntimeError), factory() as tx:
+        lost = tx.exports.add(new_export(me)).id
+        raise RuntimeError("boom")
+
+    with factory() as tx:
+        assert tx.exports.get(kept or 0) is not None
+        assert tx.exports.get(lost or 0) is None

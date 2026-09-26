@@ -18,7 +18,10 @@ RUN uv sync --locked --no-dev --no-install-project
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY app ./app
-RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
+# /data/exports is the mount point of the volume shared by the API and the
+# worker; a new named volume copies this directory's owner.
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app \
+    && install -d -o app -g app -m 700 /data/exports
 USER app
 
 # Test image: adds the dev group and the test suite.

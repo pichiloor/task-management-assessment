@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import CheckConstraint, Connection, text
@@ -41,7 +41,7 @@ def test_check_constraint_names_match_the_models(connection: Connection) -> None
             text(
                 "SELECT conname FROM pg_constraint c "
                 "JOIN pg_class t ON t.oid = c.conrelid "
-                "WHERE c.contype = 'c' AND t.relname IN ('users', 'tasks')"
+                "WHERE c.contype = 'c' AND t.relname IN ('users', 'tasks', 'exports')"
             )
         ).scalars()
     )
@@ -84,3 +84,86 @@ def test_uppercase_email_is_rejected_by_the_database(connection: Connection) -> 
                 "VALUES ('Up@example.com', 'U', 'h', true)"
             )
         )
+
+
+def _insert_export(connection: Connection, **values: object) -> None:
+    now = datetime(2026, 9, 26, tzinfo=UTC)
+    if "requester_id" not in values:
+        values["requester_id"] = _insert_user(connection)
+    row: dict[str, object] = {
+        "status": "pending",
+        "task_status": None,
+        "due_from": None,
+        "due_to": None,
+        "row_count": None,
+        "error_code": None,
+        "created_at": now,
+        "finished_at": None,
+        "expires_at": None,
+    }
+    row.update(values)
+    connection.execute(
+        text(
+            "INSERT INTO exports (requester_id, status, task_status, due_from, "
+            "due_to, row_count, error_code, created_at, finished_at, expires_at) "
+            "VALUES (:requester_id, :status, :task_status, :due_from, :due_to, "
+            ":row_count, :error_code, :created_at, :finished_at, :expires_at)"
+        ),
+        row,
+    )
+
+
+_DONE = datetime(2026, 9, 26, 1, tzinfo=UTC)
+
+
+def test_consistent_export_rows_are_accepted(connection: Connection) -> None:
+    requester = _insert_user(connection)
+    _insert_export(connection, requester_id=requester)
+    _insert_export(
+        connection,
+        requester_id=requester,
+        status="completed",
+        row_count=0,
+        finished_at=_DONE,
+        expires_at=_DONE,
+        task_status="in_progress",
+        due_from=date(2026, 9, 1),
+        due_to=date(2026, 9, 1),
+    )
+    _insert_export(
+        connection,
+        requester_id=requester,
+        status="failed",
+        error_code="export_failed",
+        finished_at=_DONE,
+    )
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"status": "running"},
+        {"task_status": "archived"},
+        {"finished_at": _DONE},
+        {"status": "completed", "row_count": 1, "expires_at": _DONE},
+        {"status": "completed", "finished_at": _DONE, "expires_at": _DONE},
+        {"status": "completed", "finished_at": _DONE, "row_count": 1},
+        {
+            "status": "completed",
+            "finished_at": _DONE,
+            "row_count": -1,
+            "expires_at": _DONE,
+        },
+        {"status": "failed", "finished_at": _DONE},
+        {"error_code": "export_failed"},
+        {"row_count": 1},
+        {"expires_at": _DONE},
+        {"status": "failed", "error_code": "x", "finished_at": _DONE, "row_count": 1},
+        {"due_from": date(2026, 9, 2), "due_to": date(2026, 9, 1)},
+    ],
+)
+def test_database_rejects_inconsistent_export_rows(
+    connection: Connection, values: dict[str, object]
+) -> None:
+    with pytest.raises(IntegrityError):
+        _insert_export(connection, **values)

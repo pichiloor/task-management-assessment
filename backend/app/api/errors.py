@@ -8,9 +8,12 @@ from fastapi.responses import JSONResponse
 
 from app.domain.errors import (
     AuthenticationError,
+    ConflictError,
     DomainError,
+    GoneError,
     NotFoundError,
     PermissionDeniedError,
+    ServiceUnavailableError,
     ValidationError,
 )
 
@@ -19,6 +22,9 @@ _STATUS: dict[type[DomainError], int] = {
     NotFoundError: 404,
     PermissionDeniedError: 403,
     AuthenticationError: 401,
+    ConflictError: 409,
+    GoneError: 410,
+    ServiceUnavailableError: 503,
 }
 
 

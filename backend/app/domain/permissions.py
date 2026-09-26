@@ -7,6 +7,7 @@ IDs reveals nothing about tasks the caller is not part of.
 from collections.abc import Iterable
 
 from app.domain.errors import NotFoundError, PermissionDeniedError
+from app.domain.export import Export
 from app.domain.task import Task
 
 ASSIGNEE_EDITABLE_FIELDS = frozenset({"status"})
@@ -34,3 +35,10 @@ def ensure_can_delete(task: Task, user_id: int) -> None:
         raise PermissionDeniedError(
             "not_task_creator", "Only the task creator can delete it"
         )
+
+
+def ensure_can_access_export(export: Export | None, user_id: int) -> Export:
+    """Only the requester may see or download an export."""
+    if export is None or export.requester_id != user_id:
+        raise NotFoundError("export_not_found", "Export not found")
+    return export

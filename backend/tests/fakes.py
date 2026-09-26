@@ -1,9 +1,13 @@
 """In-memory adapters that satisfy the application ports, for unit tests."""
 
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
-from app.application.ports import TaskQuery
+from app.application.ports import QueueUnavailableError, TaskQuery
+from app.domain.export import Export
 from app.domain.task import Task
 from app.domain.user import User
 
@@ -59,7 +63,7 @@ class InMemoryTaskRepository:
     def delete(self, task_id: int) -> None:
         self._rows.pop(task_id, None)
 
-    def list(self, query: TaskQuery) -> tuple[list[Task], int]:
+    def _matching(self, query: TaskQuery) -> list[Task]:
         rows = [
             t
             for t in self._rows.values()
@@ -71,8 +75,15 @@ class InMemoryTaskRepository:
             and (query.due_to is None or (t.due_date and t.due_date <= query.due_to))
         ]
         rows.sort(key=lambda t: (t.due_date is None, t.due_date, t.id))
+        return rows
+
+    def list(self, query: TaskQuery) -> tuple[list[Task], int]:
+        rows = self._matching(query)
         start = (query.page - 1) * query.page_size
         return [replace(t) for t in rows[start : start + query.page_size]], len(rows)
+
+    def iter_all(self, query: TaskQuery) -> Iterator[Task]:
+        return (replace(t) for t in self._matching(query))
 
 
 class FakePasswordHasher:
@@ -112,3 +123,86 @@ class FakeRedis:
         if not self.up:
             raise ConnectionError("redis unavailable")
         return True
+
+
+class InMemoryExportRepository:
+    def __init__(self) -> None:
+        self._rows: dict[int, Export] = {}
+        self._next_id = 1
+        self.locked: list[int] = []
+
+    def add(self, export: Export) -> Export:
+        stored = replace(export, id=self._next_id)
+        self._rows[self._next_id] = stored
+        self._next_id += 1
+        return replace(stored)
+
+    def get(self, export_id: int) -> Export | None:
+        row = self._rows.get(export_id)
+        return replace(row) if row else None
+
+    def get_for_update(self, export_id: int) -> Export | None:
+        self.locked.append(export_id)
+        return self.get(export_id)
+
+    def save(self, export: Export) -> Export:
+        assert export.id in self._rows
+        self._rows[export.id] = replace(export)
+        return replace(export)
+
+
+class FakeUnitOfWork:
+    """Calling it opens a "transaction". The in-memory repositories cannot
+    roll back, so a test that needs rollback checks `rollbacks` instead."""
+
+    def __init__(self, tasks: InMemoryTaskRepository | None = None) -> None:
+        self.tasks = tasks or InMemoryTaskRepository()
+        self.exports = InMemoryExportRepository()
+        self.commits = 0
+        self.rollbacks = 0
+        self.broken = False
+
+    @contextmanager
+    def __call__(self) -> Iterator["FakeUnitOfWork"]:
+        if self.broken:
+            raise ConnectionError("database unavailable")
+        try:
+            yield self
+        except BaseException:
+            self.rollbacks += 1
+            raise
+        self.commits += 1
+
+
+class FakeExportQueue:
+    """Records published IDs and how many commits had happened at that time."""
+
+    def __init__(self, uow: FakeUnitOfWork | None = None, *, up: bool = True) -> None:
+        self.uow = uow
+        self.up = up
+        self.published: list[int] = []
+        self.commits_at_publish: list[int] = []
+
+    def publish(self, export_id: int) -> None:
+        if not self.up:
+            raise QueueUnavailableError("broker unavailable")
+        self.published.append(export_id)
+        if self.uow is not None:
+            self.commits_at_publish.append(self.uow.commits)
+
+
+class FakeExportFiles:
+    def __init__(self) -> None:
+        self.files: dict[int, list[Task]] = {}
+        self.writes = 0
+        self.broken = False
+
+    def write(self, export_id: int, tasks: Iterable[Task]) -> int:
+        self.writes += 1
+        if self.broken:
+            raise OSError("disk full")
+        self.files[export_id] = list(tasks)
+        return len(self.files[export_id])
+
+    def path(self, export_id: int) -> Path | None:
+        return Path(f"/exports/{export_id}.csv") if export_id in self.files else None

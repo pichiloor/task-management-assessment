@@ -22,3 +22,15 @@ class PermissionDeniedError(DomainError):
 
 class AuthenticationError(DomainError):
     """Missing, invalid or expired credentials (maps to 401)."""
+
+
+class ConflictError(DomainError):
+    """The resource is not in a state that allows the action (maps to 409)."""
+
+
+class GoneError(DomainError):
+    """The resource existed but is no longer available (maps to 410)."""
+
+
+class ServiceUnavailableError(DomainError):
+    """A service the use case needs is down; retrying later may work (503)."""

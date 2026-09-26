@@ -50,6 +50,11 @@ strict = true
 files = ["app"]
 plugins = ["pydantic.mypy"]
 
+# Celery and kombu ship no type information.
+[[tool.mypy.overrides]]
+module = ["celery.*", "kombu.*"]
+ignore_missing_imports = true
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true

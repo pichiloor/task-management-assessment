@@ -29,7 +29,7 @@ _FORBIDDEN: Responses = {
     403: {"model": ErrorResponse, "description": "Not allowed for this user"}
 }
 # FastAPI's own 422 (request validation) or a business-rule error.
-_INVALID: Responses = {
+INVALID_RESPONSE: Responses = {
     422: {
         "description": "Request validation error or business-rule violation",
         "content": {
@@ -58,7 +58,7 @@ _INVALID: Responses = {
     "",
     status_code=status.HTTP_201_CREATED,
     response_model=TaskOut,
-    responses=_INVALID,
+    responses=INVALID_RESPONSE,
     summary="Create a task (the caller becomes its creator)",
 )
 def create_task(
@@ -72,7 +72,7 @@ def create_task(
 @router.get(
     "",
     response_model=TaskPage,
-    responses=_INVALID,
+    responses=INVALID_RESPONSE,
     summary="List tasks the caller created or is assigned to",
     description=(
         "Ordered by due date (tasks without one last), then ID. `due_date` is an "
@@ -117,7 +117,7 @@ def read_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> TaskO
 @router.patch(
     "/{task_id}",
     response_model=TaskOut,
-    responses=_NOT_FOUND | _FORBIDDEN | _INVALID,
+    responses=_NOT_FOUND | _FORBIDDEN | INVALID_RESPONSE,
     summary="Change some fields (the assignee may only change status)",
 )
 def update_task(
