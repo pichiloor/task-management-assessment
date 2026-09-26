@@ -1,15 +1,137 @@
-name: Quality scaffold
+name: CI
 
-# Manual only during step 1; application CI and service containers come later.
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# A newer push to the same branch or pull request cancels the older run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.12.19"
+
 jobs:
-  scope:
-    runs-on: ubuntu-latest
+  # The same pre-commit hooks developers run locally: Ruff (lint and format),
+  # mypy strict, import-linter (Clean Architecture contracts), detect-secrets,
+  # ESLint and the generic file checks.
+  quality:
+    name: Lint, types and architecture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - name: Explain current scope
-        run: echo 'Step 1 scaffold only. Application CI is pending.'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          working-directory: backend
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --locked
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Run pre-commit on every file
+        run: uv run --project backend --locked pre-commit run --all-files --show-diff-on-failure
+
+  # Unit and integration tests against real PostgreSQL and Redis, with the
+  # same image versions as docker-compose.yml. Integration tests are skipped
+  # without TEST_POSTGRES_DB, so it is set here on purpose.
+  backend-tests:
+    name: Backend tests and coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      db:
+        image: postgres:16.15-alpine
+        env:
+          POSTGRES_USER: task_management
+          POSTGRES_PASSWORD: ci-only-password # pragma: allowlist secret
+          POSTGRES_DB: task_management
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U task_management -d task_management"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7.4.11-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      POSTGRES_USER: task_management
+      POSTGRES_PASSWORD: ci-only-password # pragma: allowlist secret
+      POSTGRES_DB: task_management
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      TEST_POSTGRES_DB: task_management_test
+      # Database 15 is reserved for tests and flushed by them.
+      TEST_REDIS_URL: redis://localhost:6379/15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          working-directory: backend
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run tests with coverage
+        run: >-
+          uv run --locked pytest -p no:cacheprovider
+          -W error::DeprecationWarning
+          --cov=app --cov-report=term-missing --cov-fail-under=80
+
+  # The images Compose builds: catches a broken Dockerfile before a reviewer
+  # runs `docker compose up`.
+  docker-build:
+    name: Backend Docker images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build runtime image
+        run: docker build --target runtime --tag task-management-backend:ci backend
+
+      - name: Build test image
+        run: docker build --target test --tag task-management-backend-tests:ci backend

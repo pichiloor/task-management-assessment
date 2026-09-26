@@ -46,6 +46,7 @@ choice is not established by this session and is not inferred here.
   generating a demo application. Frontend tests remain a later enhancement.
 - Keep Docker/nginx as explicit placeholders and CI manual-only with a scope
   notice; real service CI remains a later step and no test success is implied.
+  (Step 10 replaced that placeholder with the real CI.)
 - Keep caches, temporary files and dependency installations inside this repository.
 
 ## Alternatives and tradeoffs to revisit

@@ -556,3 +556,26 @@
   transactional outbox; a lost job is recovered after 2 to 3 minutes, and a
   queue backlog longer than 2 minutes produces duplicate (harmless, no-op)
   jobs.
+
+## Step 10: CI on GitHub Actions (2026-09-26)
+
+- Implemented by Claude (Claude Code, Opus 5.5) at the author's request
+  ("adelante con el paso 10"); reviewed by Codex (`gpt-6-astra`, read-only).
+- Design: three jobs. `quality` runs `pre-commit run --all-files`, so CI
+  runs exactly the hooks developers run (Ruff lint and format, mypy strict,
+  import-linter contracts, detect-secrets, ESLint, file hygiene) instead of
+  a second list that could drift. `backend-tests` runs pytest on the runner
+  with PostgreSQL 16.15 and Redis 7.4.11 as `services` (same versions as
+  Compose), with `TEST_POSTGRES_DB` set so the integration tests are not
+  silently skipped, deprecations as errors and `--cov-fail-under=80`.
+  `docker-build` builds the `runtime` and `test` images. Actions are pinned
+  by commit SHA (tags looked up with `gh api`), permissions are
+  `contents: read`, checkout does not persist the token, and a newer push
+  cancels the older run.
+- Not in CI yet: `tsc`, the frontend build and the OpenAPI types drift
+  check; the frontend has no source files until the next step.
+- Verification (local, since nothing is pushed yet, so the workflow has not
+  run on GitHub): actionlint 1.7.12 → 0 errors; `pre-commit run --all-files`
+  → all hooks pass; the test job reproduced on the host with uv and
+  throwaway PostgreSQL/Redis containers of the same images → 393 passed,
+  none skipped, 98.51% coverage; both Docker targets build.

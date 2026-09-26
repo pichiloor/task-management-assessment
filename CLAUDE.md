@@ -6,7 +6,8 @@ Steps 1 (tooling), 2 (PostgreSQL and Redis in Compose), 3 (domain rules and
 use cases, TDD), 4 (SQLAlchemy repositories, Alembic) and 5 (JWT login,
 Argon2, auth endpoints) and 6 (task CRUD endpoints, `/api/health`, `api`
 Compose service), 7 (demo seed), 8 (rate limiting) and 9 (Celery worker and
-CSV export) are done. Next: CI (GitHub Actions).
+CSV export) and 10 (CI on GitHub Actions) are done. Next: React frontend
+behind nginx.
 
 CSV export (`app/application/exports.py`, `app/infrastructure/worker.py`,
 `worker_main.py`, `export_files.py`, `app/api/routes/exports.py`):
@@ -112,6 +113,16 @@ by hand under `backend/migrations/versions/`, wrapping full constraint names in
 `op.f()`. `test_migrations.py` compares tables, columns, types, indexes and
 server defaults with the models; Alembic does not compare CHECK constraints,
 so `test_schema_constraints.py` checks their names and behavior.
+CI (`.github/workflows/ci.yml`, on push to `main`, pull requests and manual
+runs) has three jobs: `quality` runs `pre-commit run --all-files` (so CI and
+local hooks are the same checks); `backend-tests` runs the full suite on the
+runner with PostgreSQL and Redis as `services` (same image versions as
+Compose, `TEST_POSTGRES_DB` set so integration tests run, coverage under 80%
+fails); `docker-build` builds the `runtime` and `test` images. Actions are
+pinned by commit SHA and checkout does not keep the token. When the frontend
+gets source files, add `tsc`, the production build and the OpenAPI types
+drift check to CI.
+
 Do not claim tests passed, coverage, performance or platform compatibility
 without executing the corresponding checks and recording real results.
 
@@ -128,8 +139,8 @@ and demo seed),
 `api` (uvicorn factory on port 8000, not published yet; healthcheck on
 `/api/health`), `worker` (Celery, queues `maintenance,celery`), `beat`
 (exactly one) and `backend-tests` (profile `test`). The backend Dockerfile has `runtime` and
-`test` targets and runs as a non-root user. The frontend Dockerfile, nginx and
-application CI are still placeholders.
+`test` targets and runs as a non-root user. The frontend Dockerfile and nginx
+are still placeholders.
 
 ```sh
 ./scripts/setup-env.sh              # once: creates .env with random secrets
