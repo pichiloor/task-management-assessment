@@ -10,12 +10,14 @@ from celery import Celery
 from kombu.exceptions import OperationalError as KombuOperationalError
 from redis.exceptions import RedisError
 
-from app.application.exports import ExportRunner
+from app.application.exports import ExportMaintenance, ExportRunner
 from app.application.ports import QueueUnavailableError
 
 logger = logging.getLogger(__name__)
 
 RUN_EXPORT: Final = "exports.run"
+MAINTAIN_EXPORTS: Final = "exports.maintain"
+MAINTENANCE_INTERVAL: Final = 60.0  # seconds
 MAX_RETRIES: Final = 3
 
 _PUBLISH_ERRORS = (KombuOperationalError, RedisError, OSError)
@@ -69,9 +71,14 @@ class CeleryExportQueue:
             raise QueueUnavailableError(type(exc).__name__) from exc
 
 
-def create_worker_app(broker_url: str, runner: Callable[[], ExportRunner]) -> Celery:
-    """`runner` is called inside the worker process, so database connections
-    are opened after Celery forks its pool processes."""
+def create_worker_app(
+    broker_url: str,
+    runner: Callable[[], ExportRunner],
+    maintenance: Callable[[], ExportMaintenance] | None = None,
+) -> Celery:
+    """The factories are called inside the worker process, so database
+    connections are opened after Celery forks its pool processes. With
+    `maintenance`, beat schedules it every MAINTENANCE_INTERVAL seconds."""
     app = create_celery(broker_url)
 
     def run_export(task: Any, export_id: int) -> None:
@@ -89,7 +96,11 @@ def create_worker_app(broker_url: str, runner: Callable[[], ExportRunner]) -> Ce
                 )
                 raise task.retry(exc=exc, countdown=retry_delay(retries)) from exc
             logger.exception("export %s: giving up after %s", export_id, retries + 1)
-            export_runner.fail(export_id)
+            try:
+                export_runner.fail(export_id)
+            except Exception:
+                # Left pending; the maintenance task republishes it later.
+                logger.exception("export %s: could not be marked failed", export_id)
             return
         logger.info("export %s: %s", export_id, status or "not found")
 
@@ -98,4 +109,26 @@ def create_worker_app(broker_url: str, runner: Callable[[], ExportRunner]) -> Ce
     app.task(name=RUN_EXPORT, bind=True, max_retries=MAX_RETRIES, shared=False)(
         run_export
     )
+
+    if maintenance is not None:
+        build_maintenance = maintenance
+
+        def maintain_exports() -> None:
+            service = build_maintenance()
+            republished = service.redispatch_stale()
+            removed = service.remove_expired_files()
+            if republished or removed:
+                logger.info(
+                    "exports: %s republished, %s files removed", republished, removed
+                )
+
+        app.task(name=MAINTAIN_EXPORTS, shared=False)(maintain_exports)
+        app.conf.beat_schedule = {
+            "maintain-exports": {
+                "task": MAINTAIN_EXPORTS,
+                "schedule": MAINTENANCE_INTERVAL,
+                # A missed run is not worth doing late: the next one repeats it.
+                "options": {"expires": MAINTENANCE_INTERVAL},
+            }
+        }
     return app

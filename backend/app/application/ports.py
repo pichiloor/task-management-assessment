@@ -81,6 +81,14 @@ class ExportRepository(Protocol):
 
     def save(self, export: Export) -> Export: ...
 
+    def claim_stale_pending(
+        self, *, dispatched_before: datetime, limit: int
+    ) -> list[Export]:
+        """Pending exports last dispatched before the given time, locked until
+        the transaction ends. Exports locked elsewhere (being processed by a
+        worker) are skipped, not waited for."""
+        ...
+
 
 class UnitOfWork(Protocol):
     @property
@@ -113,4 +121,11 @@ class ExportFiles(Protocol):
 
     def path(self, export_id: int) -> Path | None:
         """The export file, or None if it does not exist."""
+        ...
+
+    def remove_older_than(
+        self, *, files_before: datetime, temp_before: datetime
+    ) -> int:
+        """Deletes export files last written before `files_before` and
+        leftover temporary files from before `temp_before`; returns how many."""
         ...

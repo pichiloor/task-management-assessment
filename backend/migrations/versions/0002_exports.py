@@ -28,6 +28,7 @@ def upgrade() -> None:
         sa.Column("row_count", sa.Integer(), nullable=True),
         sa.Column("error_code", sa.String(length=50), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("dispatched_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
@@ -68,6 +69,12 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name="pk_exports"),
     )
     op.create_index("ix_exports_requester_id", "exports", ["requester_id"])
+    op.create_index(
+        "ix_exports_pending_dispatched_at",
+        "exports",
+        ["dispatched_at"],
+        postgresql_where=sa.text("status = 'pending'"),
+    )
 
 
 def downgrade() -> None:

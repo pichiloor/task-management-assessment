@@ -5,7 +5,9 @@ import pytest
 
 from app.application.exports import (
     EXPORT_FAILED,
+    EXPORT_TIMED_OUT,
     QUEUE_UNAVAILABLE,
+    ExportMaintenance,
     ExportRunner,
     ExportService,
 )
@@ -378,3 +380,124 @@ class TestFail:
 
     def test_missing_export_is_ignored(self, runner: ExportRunner) -> None:
         runner.fail(999)
+
+
+class TestMaintenance:
+    """Recovers exports whose job was lost (broker restart, a retry that
+    could not be published, a worker that could not record the failure)."""
+
+    @pytest.fixture
+    def maintenance(
+        self,
+        uow: FakeUnitOfWork,
+        queue: FakeExportQueue,
+        files: FakeExportFiles,
+        clock: FakeClock,
+    ) -> ExportMaintenance:
+        return ExportMaintenance(
+            uow=uow, queue=queue, files=files, clock=clock, ttl=TTL
+        )
+
+    def test_republishes_exports_pending_since_their_last_dispatch(
+        self,
+        service: ExportService,
+        maintenance: ExportMaintenance,
+        uow: FakeUnitOfWork,
+        queue: FakeExportQueue,
+        clock: FakeClock,
+    ) -> None:
+        stale = service.request(OWNER, TaskListFilters()).id
+        clock.advance(minutes=2)
+        fresh = service.request(OWNER, TaskListFilters()).id
+        clock.advance(seconds=1)
+        queue.published.clear()
+
+        assert maintenance.redispatch_stale() == 1
+
+        assert queue.published == [stale]
+        assert stored(uow, stale).dispatched_at == clock()
+        assert stored(uow, fresh).dispatched_at < clock()
+
+    def test_republished_export_waits_again_before_the_next_attempt(
+        self,
+        service: ExportService,
+        maintenance: ExportMaintenance,
+        queue: FakeExportQueue,
+        clock: FakeClock,
+    ) -> None:
+        service.request(OWNER, TaskListFilters())
+        clock.advance(minutes=3)
+        maintenance.redispatch_stale()
+        queue.published.clear()
+
+        clock.advance(minutes=1)
+        assert maintenance.redispatch_stale() == 0
+        assert queue.published == []
+
+    def test_finished_exports_are_left_alone(
+        self,
+        service: ExportService,
+        runner: ExportRunner,
+        maintenance: ExportMaintenance,
+        queue: FakeExportQueue,
+        clock: FakeClock,
+    ) -> None:
+        done = service.request(OWNER, TaskListFilters()).id or 0
+        failed = service.request(OWNER, TaskListFilters()).id or 0
+        runner.run(done)
+        runner.fail(failed)
+        clock.advance(hours=1)
+        queue.published.clear()
+
+        assert maintenance.redispatch_stale() == 0
+        assert queue.published == []
+
+    def test_gives_up_on_exports_pending_for_too_long(
+        self,
+        service: ExportService,
+        maintenance: ExportMaintenance,
+        uow: FakeUnitOfWork,
+        queue: FakeExportQueue,
+        clock: FakeClock,
+    ) -> None:
+        export_id = service.request(OWNER, TaskListFilters()).id
+        clock.advance(minutes=30)
+        queue.published.clear()
+
+        maintenance.redispatch_stale()
+
+        saved = stored(uow, export_id)
+        assert saved.status is ExportStatus.FAILED
+        assert saved.error_code == EXPORT_TIMED_OUT
+        assert queue.published == []
+
+    def test_queue_still_down_leaves_the_export_for_a_later_run(
+        self,
+        service: ExportService,
+        maintenance: ExportMaintenance,
+        uow: FakeUnitOfWork,
+        queue: FakeExportQueue,
+        clock: FakeClock,
+    ) -> None:
+        export_id = service.request(OWNER, TaskListFilters()).id
+        clock.advance(minutes=3)
+        queue.up = False
+
+        assert maintenance.redispatch_stale() == 0
+
+        assert stored(uow, export_id).status is ExportStatus.PENDING
+
+    def test_removes_files_past_their_expiry_and_stale_temp_files(
+        self,
+        maintenance: ExportMaintenance,
+        files: FakeExportFiles,
+        clock: FakeClock,
+    ) -> None:
+        maintenance.remove_expired_files()
+
+        ((files_before, temp_before),) = files.removals
+        # Files are written just before the export is marked completed, so a
+        # margin keeps a file until its export has certainly expired.
+        assert files_before < clock() - TTL
+        assert files_before >= clock() - TTL - timedelta(minutes=10)
+        assert temp_before <= clock() - timedelta(hours=1)

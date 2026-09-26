@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.application.ports import QueueUnavailableError, TaskQuery
-from app.domain.export import Export
+from app.domain.export import Export, ExportStatus
 from app.domain.task import Task
 from app.domain.user import User
 
@@ -150,6 +150,17 @@ class InMemoryExportRepository:
         self._rows[export.id] = replace(export)
         return replace(export)
 
+    def claim_stale_pending(
+        self, *, dispatched_before: datetime, limit: int
+    ) -> list[Export]:
+        stale = [
+            replace(e)
+            for e in sorted(self._rows.values(), key=lambda e: e.id or 0)
+            if e.status is ExportStatus.PENDING and e.dispatched_at < dispatched_before
+        ]
+        self.locked.extend(e.id or 0 for e in stale[:limit])
+        return stale[:limit]
+
 
 class FakeUnitOfWork:
     """Calling it opens a "transaction". The in-memory repositories cannot
@@ -196,6 +207,7 @@ class FakeExportFiles:
         self.files: dict[int, list[Task]] = {}
         self.writes = 0
         self.broken = False
+        self.removals: list[tuple[datetime, datetime]] = []
 
     def write(self, export_id: int, tasks: Iterable[Task]) -> int:
         self.writes += 1
@@ -206,3 +218,9 @@ class FakeExportFiles:
 
     def path(self, export_id: int) -> Path | None:
         return Path(f"/exports/{export_id}.csv") if export_id in self.files else None
+
+    def remove_older_than(
+        self, *, files_before: datetime, temp_before: datetime
+    ) -> int:
+        self.removals.append((files_before, temp_before))
+        return 0

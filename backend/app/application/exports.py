@@ -1,10 +1,13 @@
 """CSV exports: requested over HTTP (ExportService), produced by the worker
-(ExportRunner).
+(ExportRunner) and supervised by a periodic task (ExportMaintenance).
 
 The export row is committed before the job is published, so the worker always
 finds it. If publishing fails the export is marked failed and the caller gets
-a 503. A crash between the commit and the publish would leave it pending: a
-transactional outbox would close that gap (documented limitation).
+a 503. Jobs can still be lost afterwards (a crash right after the commit, a
+broker restart, a retry that could not be published, a worker that could not
+record a failure): PostgreSQL is the source of truth, and ExportMaintenance
+republishes exports that stay pending, then gives up on them. This is a
+polling substitute for a transactional outbox (documented).
 """
 
 import logging
@@ -29,6 +32,18 @@ logger = logging.getLogger(__name__)
 
 QUEUE_UNAVAILABLE: Final = "queue_unavailable"
 EXPORT_FAILED: Final = "export_failed"
+EXPORT_TIMED_OUT: Final = "export_timed_out"
+
+# A pending export not dispatched for this long has probably lost its job.
+REDISPATCH_AFTER: Final = timedelta(minutes=2)
+# Pending for this long since it was requested: stop trying.
+GIVE_UP_AFTER: Final = timedelta(minutes=30)
+REDISPATCH_BATCH: Final = 100
+# Files are written just before the export is marked completed; the margin
+# keeps a file until its export has certainly expired.
+FILE_EXPIRY_MARGIN: Final = timedelta(minutes=5)
+# A temporary file this old belongs to a write that died.
+TEMP_FILE_MAX_AGE: Final = timedelta(hours=1)
 
 
 def _fail_if_pending(
@@ -140,3 +155,58 @@ class ExportRunner:
     def fail(self, export_id: int, code: str = EXPORT_FAILED) -> None:
         """Marks a still-pending export as failed (retries exhausted)."""
         _fail_if_pending(self._uow, export_id, code, self._clock)
+
+
+class ExportMaintenance:
+    """Run periodically (Celery beat)."""
+
+    def __init__(
+        self,
+        *,
+        uow: UnitOfWorkFactory,
+        queue: ExportQueue,
+        files: ExportFiles,
+        clock: Clock,
+        ttl: timedelta,
+    ) -> None:
+        self._uow = uow
+        self._queue = queue
+        self._files = files
+        self._clock = clock
+        self._ttl = ttl
+
+    def redispatch_stale(self) -> int:
+        """Republishes pending exports whose job may be lost; returns how
+        many were published. A duplicate job is harmless (the runner is
+        idempotent)."""
+        now = self._clock()
+        to_publish: list[int] = []
+        with self._uow() as tx:
+            stale = tx.exports.claim_stale_pending(
+                dispatched_before=now - REDISPATCH_AFTER, limit=REDISPATCH_BATCH
+            )
+            for export in stale:
+                if now - export.created_at >= GIVE_UP_AFTER:
+                    export.fail(EXPORT_TIMED_OUT, now=now)
+                    logger.warning("export %s: gave up, pending too long", export.id)
+                else:
+                    export.mark_dispatched(now=now)
+                    to_publish.append(export.id or 0)
+                tx.exports.save(export)
+        published = 0
+        for export_id in to_publish:
+            try:
+                self._queue.publish(export_id)
+            except QueueUnavailableError:
+                # Still pending; the next run tries again.
+                logger.warning("export %s: queue unavailable on redispatch", export_id)
+                break
+            published += 1
+        return published
+
+    def remove_expired_files(self) -> int:
+        now = self._clock()
+        return self._files.remove_older_than(
+            files_before=now - self._ttl - FILE_EXPIRY_MARGIN,
+            temp_before=now - TEMP_FILE_MAX_AGE,
+        )

@@ -6,6 +6,7 @@ import os
 import tempfile
 from collections.abc import Iterable
 from contextlib import suppress
+from datetime import datetime
 from pathlib import Path
 
 from app.domain.task import Task
@@ -87,3 +88,20 @@ class CsvExportFiles:
     def path(self, export_id: int) -> Path | None:
         file = self._file(export_id)
         return file if file.is_file() else None
+
+    def remove_older_than(
+        self, *, files_before: datetime, temp_before: datetime
+    ) -> int:
+        """Only files this class names are touched. A download already in
+        progress keeps reading an unlinked file (POSIX semantics)."""
+        removed = 0
+        for pattern, cutoff in (
+            ("export-*.csv", files_before),
+            (".export-*.tmp", temp_before),
+        ):
+            for file in self._directory.glob(pattern):
+                with suppress(FileNotFoundError):
+                    if file.stat().st_mtime < cutoff.timestamp():
+                        file.unlink()
+                        removed += 1
+        return removed

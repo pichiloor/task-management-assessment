@@ -159,3 +159,41 @@ def test_files_are_private_to_the_service_user(files: CsvExportFiles) -> None:
 
 def test_missing_file_has_no_path(files: CsvExportFiles) -> None:
     assert files.path(1) is None
+
+
+def test_removes_files_and_temp_files_older_than_their_cutoffs(
+    files: CsvExportFiles, tmp_path: Path
+) -> None:
+    import os
+    from datetime import timedelta
+
+    directory = tmp_path / "exports"
+    files.write(1, [task(1)])
+    files.write(2, [task(2)])
+    old_temp = directory / ".export-3-abc.tmp"
+    new_temp = directory / ".export-4-def.tmp"
+    old_temp.write_text("partial")
+    new_temp.write_text("partial")
+    unrelated = directory / "notes.txt"
+    unrelated.write_text("keep")
+    cutoff = datetime.now(UTC) - timedelta(hours=1)
+    long_ago = (cutoff - timedelta(hours=1)).timestamp()
+    old_file = files.path(1)
+    assert old_file is not None
+    for path in (old_file, old_temp, unrelated):
+        os.utime(path, (long_ago, long_ago))
+
+    removed = files.remove_older_than(files_before=cutoff, temp_before=cutoff)
+
+    assert removed == 2
+    assert files.path(1) is None and files.path(2) is not None
+    assert not old_temp.exists() and new_temp.exists()
+    assert unrelated.exists()
+
+
+def test_cleanup_of_a_missing_directory_removes_nothing(
+    files: CsvExportFiles,
+) -> None:
+    now = datetime.now(UTC)
+
+    assert files.remove_older_than(files_before=now, temp_before=now) == 0

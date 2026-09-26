@@ -98,6 +98,7 @@ def _insert_export(connection: Connection, **values: object) -> None:
         "row_count": None,
         "error_code": None,
         "created_at": now,
+        "dispatched_at": now,
         "finished_at": None,
         "expires_at": None,
     }
@@ -105,9 +106,11 @@ def _insert_export(connection: Connection, **values: object) -> None:
     connection.execute(
         text(
             "INSERT INTO exports (requester_id, status, task_status, due_from, "
-            "due_to, row_count, error_code, created_at, finished_at, expires_at) "
+            "due_to, row_count, error_code, created_at, dispatched_at, "
+            "finished_at, expires_at) "
             "VALUES (:requester_id, :status, :task_status, :due_from, :due_to, "
-            ":row_count, :error_code, :created_at, :finished_at, :expires_at)"
+            ":row_count, :error_code, :created_at, :dispatched_at, :finished_at, "
+            ":expires_at)"
         ),
         row,
     )

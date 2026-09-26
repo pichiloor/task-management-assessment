@@ -26,6 +26,8 @@ class Export:
     due_to: date | None
     status: ExportStatus
     created_at: datetime
+    # Last time the job was handed to the queue; lost jobs are found by it.
+    dispatched_at: datetime
     finished_at: datetime | None = None
     row_count: int | None = None
     expires_at: datetime | None = None
@@ -42,14 +44,21 @@ class Export:
         due_to: date | None,
         now: datetime,
     ) -> "Export":
+        now = to_utc(now)
         return cls(
             requester_id=requester_id,
             task_status=task_status,
             due_from=due_from,
             due_to=due_to,
             status=ExportStatus.PENDING,
-            created_at=to_utc(now),
+            created_at=now,
+            dispatched_at=now,
         )
+
+    def mark_dispatched(self, *, now: datetime) -> None:
+        now = to_utc(now)
+        self._ensure_pending()
+        self.dispatched_at = now
 
     def complete(self, *, row_count: int, now: datetime, ttl: timedelta) -> None:
         now = to_utc(now)

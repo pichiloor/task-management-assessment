@@ -12,6 +12,7 @@ from app.application.ports import QueueUnavailableError
 from app.application.tasks import TaskListFilters
 from app.domain.export import ExportStatus
 from app.infrastructure.worker import (
+    MAINTAIN_EXPORTS,
     MAX_RETRIES,
     RUN_EXPORT,
     CeleryExportQueue,
@@ -150,3 +151,48 @@ def test_each_app_keeps_its_own_task() -> None:
     export = first_uow.exports.get(first_id)
     assert export is not None and export.status is ExportStatus.COMPLETED
     assert RUN_EXPORT not in create_celery("memory://").tasks
+
+
+def test_failure_that_cannot_be_recorded_is_logged_not_raised(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Database down for every attempt and for fail() too: the export stays
+    # pending and the maintenance task republishes it later.
+    uow = FakeUnitOfWork()
+    export_id = pending_export(uow)
+    uow.broken = True
+
+    run(uow, FakeExportFiles(), export_id)
+
+    uow.broken = False
+    export = uow.exports.get(export_id)
+    assert export is not None and export.status is ExportStatus.PENDING
+    assert "could not be marked failed" in caplog.text
+
+
+def test_maintenance_task_redispatches_and_cleans_up() -> None:
+    calls: list[str] = []
+
+    class Maintenance:
+        def redispatch_stale(self) -> int:
+            calls.append("redispatch")
+            return 0
+
+        def remove_expired_files(self) -> int:
+            calls.append("cleanup")
+            return 0
+
+    app = create_worker_app(
+        "memory://",
+        lambda: ExportRunner(
+            uow=FakeUnitOfWork(), files=FakeExportFiles(), clock=FakeClock(), ttl=TTL
+        ),
+        maintenance=lambda: Maintenance(),  # type: ignore[arg-type,return-value]
+    )
+
+    app.tasks[MAINTAIN_EXPORTS].apply()
+
+    assert calls == ["redispatch", "cleanup"]
+    schedule = app.conf.beat_schedule
+    assert [e["task"] for e in schedule.values()] == [MAINTAIN_EXPORTS]
+    assert all(e["schedule"] <= 60 for e in schedule.values())

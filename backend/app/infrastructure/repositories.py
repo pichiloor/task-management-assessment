@@ -180,6 +180,7 @@ def _to_export(row: ExportRow) -> Export:
         due_to=row.due_to,
         status=ExportStatus(row.status),
         created_at=row.created_at.astimezone(UTC),
+        dispatched_at=row.dispatched_at.astimezone(UTC),
         finished_at=_utc(row.finished_at),
         row_count=row.row_count,
         expires_at=_utc(row.expires_at),
@@ -194,6 +195,7 @@ def _copy_export_into(row: ExportRow, export: Export) -> None:
     row.due_to = export.due_to
     row.status = export.status.value
     row.created_at = export.created_at
+    row.dispatched_at = export.dispatched_at
     row.finished_at = export.finished_at
     row.row_count = export.row_count
     row.expires_at = export.expires_at
@@ -225,6 +227,22 @@ class SqlExportRepository:
             .execution_options(populate_existing=True)
         )
         return _to_export(row) if row else None
+
+    def claim_stale_pending(
+        self, *, dispatched_before: datetime, limit: int
+    ) -> list[Export]:
+        rows = self._session.scalars(
+            select(ExportRow)
+            .where(
+                ExportRow.status == ExportStatus.PENDING.value,
+                ExportRow.dispatched_at < dispatched_before,
+            )
+            .order_by(ExportRow.dispatched_at, ExportRow.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+        )
+        return [_to_export(row) for row in rows]
 
     def save(self, export: Export) -> Export:
         if export.id is None:

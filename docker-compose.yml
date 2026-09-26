@@ -36,6 +36,12 @@ services:
   redis:
     image: redis:7.4.11-alpine
     restart: unless-stopped
+    # Append-only file: queued export jobs survive a Redis restart. Jobs lost
+    # anyway are republished by the beat service (PostgreSQL is the source
+    # of truth).
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -136,6 +142,28 @@ services:
       redis:
         condition: service_healthy
 
+  # Schedules the export maintenance task every minute (republishes exports
+  # whose job was lost, gives up on stale ones, deletes expired files). The
+  # task itself runs on the worker. Exactly one beat must run.
+  beat:
+    build:
+      context: ./backend
+      target: runtime
+    restart: unless-stopped
+    environment:
+      <<: [*database-env, *export-env]
+    command:
+      - celery
+      - --app=app.infrastructure.worker_main
+      - beat
+      - --loglevel=INFO
+      - --schedule=/tmp/celerybeat-schedule
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
   # Runs the backend suite against a separate *_test database:
   #   docker compose run --rm --build backend-tests
   backend-tests:
@@ -156,4 +184,5 @@ services:
 
 volumes:
   db-data:
+  redis-data:
   exports:

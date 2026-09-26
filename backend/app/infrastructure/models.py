@@ -13,6 +13,7 @@ from sqlalchemy import (
     MetaData,
     String,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -102,6 +103,12 @@ class ExportRow(Base):
             name="error_matches_status",
         ),
         CheckConstraint("row_count >= 0", name="row_count_not_negative"),
+        # Maintenance looks up pending exports by their last dispatch.
+        Index(
+            "ix_exports_pending_dispatched_at",
+            "dispatched_at",
+            postgresql_where=text("status = 'pending'"),
+        ),
         CheckConstraint(
             "due_from IS NULL OR due_to IS NULL OR due_from <= due_to",
             name="due_range_valid",
@@ -120,5 +127,6 @@ class ExportRow(Base):
     row_count: Mapped[int | None] = mapped_column(Integer)
     error_code: Mapped[str | None] = mapped_column(String(50))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    dispatched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

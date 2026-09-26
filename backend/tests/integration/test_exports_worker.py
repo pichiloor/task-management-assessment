@@ -19,7 +19,7 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.app import create_app
-from app.application.exports import ExportRunner
+from app.application.exports import ExportMaintenance, ExportRunner
 from app.domain.export import Export, ExportStatus
 from app.domain.task import Task
 from app.infrastructure.export_files import CsvExportFiles
@@ -203,3 +203,76 @@ def test_a_second_run_waits_for_the_first_and_then_does_nothing(
     second.join(timeout=10)
     assert result == [ExportStatus.FAILED]
     assert list(tmp_path.iterdir()) == []
+
+
+def add_export(session: Session, requester: int, *, now: datetime = NOW) -> int:
+    export = SqlExportRepository(session).add(
+        Export.request(
+            requester_id=requester,
+            task_status=None,
+            due_from=None,
+            due_to=None,
+            now=now,
+        )
+    )
+    assert export.id is not None
+    return export.id
+
+
+def test_redispatch_skips_exports_a_worker_is_processing(
+    committed: Callable[[], Session],
+) -> None:
+    with committed() as session, session.begin():
+        ana = SqlUserRepository(session).create(
+            email="ana@example.com", name="Ana", password_hash="h"
+        )
+        busy = add_export(session, ana.id)
+        idle = add_export(session, ana.id)
+
+    with committed() as worker, worker.begin():
+        assert SqlExportRepository(worker).get_for_update(busy) is not None
+        with committed() as maintenance, maintenance.begin():
+            claimed = SqlExportRepository(maintenance).claim_stale_pending(
+                dispatched_before=NOW + timedelta(minutes=5), limit=10
+            )
+
+    assert [e.id for e in claimed] == [idle]
+
+
+def test_real_worker_completes_an_export_whose_job_was_lost(
+    committed: Callable[[], Session], broker_url: str, tmp_path: Path
+) -> None:
+    # The row exists but its message never reached the queue (for example,
+    # Redis restarted): maintenance republishes it and the worker runs it.
+    old = datetime.now(UTC) - timedelta(minutes=5)
+    with committed() as session, session.begin():
+        ana = SqlUserRepository(session).create(
+            email="ana@example.com", name="Ana", password_hash="h"
+        )
+        add_task(session, ana.id)
+        export_id = add_export(session, ana.id, now=old)
+
+    queue_name = f"test-exports-{uuid.uuid4().hex}"
+    worker_app = create_worker_app(broker_url, lambda: make_runner(committed, tmp_path))
+    worker_app.conf.task_default_queue = queue_name
+    maintenance = ExportMaintenance(
+        uow=sql_unit_of_work(committed),
+        queue=CeleryExportQueue(worker_app),
+        files=CsvExportFiles(tmp_path),
+        clock=lambda: datetime.now(UTC),
+        ttl=TTL,
+    )
+
+    with start_worker(worker_app, pool="solo", perform_ping_check=False):
+        assert maintenance.redispatch_stale() == 1
+        deadline = time.monotonic() + 20
+        status = ExportStatus.PENDING
+        while status is ExportStatus.PENDING and time.monotonic() < deadline:
+            time.sleep(0.2)
+            with committed() as session:
+                export = SqlExportRepository(session).get(export_id)
+                assert export is not None
+                status = export.status
+
+    assert status is ExportStatus.COMPLETED
+    assert export.row_count == 1

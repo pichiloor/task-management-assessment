@@ -128,3 +128,23 @@ class TestAccess:
             ensure_can_access_export(export, 1)
 
         assert exc.value.code == "export_not_found"
+
+
+def test_new_export_counts_as_dispatched_when_requested() -> None:
+    assert make_export().dispatched_at == NOW
+
+
+def test_redispatch_records_the_time() -> None:
+    export = make_export()
+
+    export.mark_dispatched(now=NOW + timedelta(minutes=3))
+
+    assert export.dispatched_at == NOW + timedelta(minutes=3)
+
+
+def test_finished_exports_are_not_redispatched() -> None:
+    export = make_export()
+    export.fail("export_failed", now=NOW)
+
+    with pytest.raises(ConflictError):
+        export.mark_dispatched(now=NOW)
