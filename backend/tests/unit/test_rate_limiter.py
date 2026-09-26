@@ -1,5 +1,6 @@
 import threading
 import time
+from collections.abc import Callable
 
 import pytest
 from limits import parse
@@ -216,3 +217,66 @@ def test_a_newer_failure_stops_a_pending_probe() -> None:
     limiter.hit("5/minute", "k")
 
     assert broken.calls == 1
+
+
+class ScriptedStorage(MemoryStorage):
+    """Each incr() runs the next scripted step (which may block or raise)
+    before behaving like memory storage."""
+
+    def __init__(self, steps: list[Callable[[], None]]) -> None:
+        super().__init__()
+        self.steps = steps
+
+    def incr(self, *args: object, **kwargs: object) -> int:
+        step = self.steps.pop(0) if self.steps else (lambda: None)
+        step()
+        return super().incr(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def test_a_stale_failure_does_not_undo_a_later_recovery() -> None:
+    # A request that started while Redis looked healthy fails only after a
+    # probe has already confirmed recovery: its old news must be ignored.
+    now = [0.0]
+    release_a, a_started = threading.Event(), threading.Event()
+
+    def slow_failure() -> None:
+        a_started.set()
+        release_a.wait(5)
+        raise RedisConnectionError("stale")
+
+    def fail() -> None:
+        raise RedisConnectionError("down")
+
+    def ok() -> None:
+        pass
+
+    storage = ScriptedStorage([slow_failure, fail, ok, ok])
+    limiter = RateLimiter(
+        UNREACHABLE,
+        primary_storage=storage,
+        retry_primary_after=30,
+        clock=lambda: now[0],
+    )
+    a = threading.Thread(target=lambda: limiter.hit("100/minute", "a"))
+    a.start()
+    a_started.wait(5)
+    limiter.hit("100/minute", "b")  # fails: backoff until 30
+    now[0] = 31.0
+    limiter.hit("100/minute", "p")  # probe succeeds: recovered
+
+    release_a.set()
+    a.join(5)
+    limiter.hit("100/minute", "after")
+
+    assert storage.steps == []  # the last hit went to Redis, not to memory
+
+
+def test_limit_namespaces_are_independent_in_memory() -> None:
+    from limits import RateLimitItemPerMinute
+
+    limiter = RateLimiter("memory://")
+    first = RateLimitItemPerMinute(1, namespace="A")
+    second = RateLimitItemPerMinute(1, namespace="B")
+
+    assert limiter.hit(first, "k").allowed
+    assert limiter.hit(second, "k").allowed
