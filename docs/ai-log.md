@@ -579,3 +579,10 @@
   → all hooks pass; the test job reproduced on the host with uv and
   throwaway PostgreSQL/Redis containers of the same images → 393 passed,
   none skipped, 98.51% coverage; both Docker targets build.
+- Codex review, two low findings, accepted: `setup-uv` resolves
+  `cache-dependency-glob` relative to its `working-directory`, so
+  `backend/uv.lock` matched nothing and the cache key would never change
+  with the lockfile (now `uv.lock`; verified in the action's `action.yml`);
+  a comment said tests flush Redis database 15, but each test only removes
+  its own keys (fixed in the workflow and in `docker-compose.yml`, where
+  Claude had copied it from). No other defects found.

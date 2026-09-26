@@ -35,7 +35,8 @@ jobs:
           version: ${{ env.UV_VERSION }}
           working-directory: backend
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          # Relative to working-directory.
+          cache-dependency-glob: uv.lock
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -93,7 +94,7 @@ jobs:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
       TEST_POSTGRES_DB: task_management_test
-      # Database 15 is reserved for tests and flushed by them.
+      # Database 15 is reserved for tests; each test removes its own keys.
       TEST_REDIS_URL: redis://localhost:6379/15
     defaults:
       run:
@@ -108,7 +109,8 @@ jobs:
           version: ${{ env.UV_VERSION }}
           working-directory: backend
           enable-cache: true
-          cache-dependency-glob: backend/uv.lock
+          # Relative to working-directory.
+          cache-dependency-glob: uv.lock
 
       - name: Install dependencies
         run: uv sync --locked

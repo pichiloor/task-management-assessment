@@ -176,7 +176,7 @@ services:
     environment:
       <<: *database-env
       TEST_POSTGRES_DB: ${POSTGRES_DB}_test
-      # Database 15 is reserved for tests and flushed by them.
+      # Database 15 is reserved for tests; each test removes its own keys.
       TEST_REDIS_URL: redis://redis:6379/15
     depends_on:
       db:
