@@ -232,3 +232,9 @@
   (`app/api/dependencies.py` is now fully covered).
 - Actual results: `backend-tests` → 156 passed, 99% coverage; host → 117
   passed; mypy strict and import contracts pass.
+- Follow-up review by Codex (`gpt-6-astra`) confirmed the fixes (it
+  reproduced the 500-vs-200 behavior in an isolated ASGI check) and found one
+  low-severity gap: the engine created by `create_app` was never disposed. A
+  lifespan now disposes it on shutdown, leaving injected session factories
+  to their owner (tests first in `1b90e76`, 2 failed). Results: Docker 158
+  passed; host 119 passed.

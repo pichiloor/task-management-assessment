@@ -1,7 +1,8 @@
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.dependencies import utc_now
@@ -21,11 +22,22 @@ def create_app(
     or weak JWT secret stops the process at startup. Tests pass their own
     settings and session factory."""
     auth = auth or AuthSettings()
+    engine: Engine | None = None
     if session_factory is None:
         engine = create_engine(DatabaseSettings().url, pool_pre_ping=True)
         session_factory = sessionmaker(bind=engine, expire_on_commit=False)
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            # Only the engine created here; an injected factory has its owner.
+            if app.state.engine is not None:
+                app.state.engine.dispose()
+
     app = FastAPI(
+        lifespan=lifespan,
         title="Task Management API",
         version="1.0.0",
         docs_url="/api/docs",
@@ -33,6 +45,7 @@ def create_app(
         redoc_url=None,
     )
     hasher = Argon2PasswordHasher()
+    app.state.engine = engine
     app.state.session_factory = session_factory
     app.state.hasher = hasher
     app.state.dummy_hash = hasher.hash("timing-equalizer")
