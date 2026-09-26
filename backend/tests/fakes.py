@@ -130,6 +130,7 @@ class InMemoryExportRepository:
         self._rows: dict[int, Export] = {}
         self._next_id = 1
         self.locked: list[int] = []
+        self.batches: list[int] = []
 
     def add(self, export: Export) -> Export:
         stored = replace(export, id=self._next_id)
@@ -151,6 +152,7 @@ class InMemoryExportRepository:
         return replace(export)
 
     def get_many(self, export_ids: list[int]) -> list[Export]:
+        self.batches.append(len(export_ids))
         return [replace(self._rows[i]) for i in export_ids if i in self._rows]
 
     def claim_stale_pending(

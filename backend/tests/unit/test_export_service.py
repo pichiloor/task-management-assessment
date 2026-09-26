@@ -533,3 +533,21 @@ class TestMaintenance:
 
         assert shorter.remove_expired_files() == 0
         assert files.export_ids() == [export_id]
+
+
+def test_file_cleanup_queries_the_database_in_bounded_batches(
+    uow: FakeUnitOfWork, files: FakeExportFiles, clock: FakeClock
+) -> None:
+    # Thousands of orphan files: one IN (...) per file would exceed the
+    # database's parameter limit.
+    for export_id in range(1, 2501):
+        files.files[export_id] = []
+    maintenance = ExportMaintenance(
+        uow=uow, queue=FakeExportQueue(), files=files, clock=clock, ttl=TTL
+    )
+
+    assert maintenance.remove_expired_files() == 2500
+
+    assert files.export_ids() == []
+    assert max(uow.exports.batches) <= 1000
+    assert sum(uow.exports.batches) == 2500

@@ -1,13 +1,16 @@
+import os
+from collections.abc import Iterator
 from typing import Any
 
 from fastapi import APIRouter, Depends, Response, status
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import CurrentUser, ExportServiceDep
 from app.api.rate_limits import limit_exports
 from app.api.routes.tasks import INVALID_RESPONSE
 from app.api.schemas import ErrorResponse, ExportCreate, ExportOut
 from app.application.tasks import TaskListFilters
+from app.domain.errors import GoneError
 
 router = APIRouter(
     prefix="/exports",
@@ -56,7 +59,7 @@ def read_export(
 
 @router.get(
     "/{export_id}/download",
-    response_class=FileResponse,
+    response_class=StreamingResponse,
     responses={
         200: {"content": {"text/csv": {}}, "description": "The CSV file"},
         409: {"model": ErrorResponse, "description": "Still running or failed"},
@@ -66,11 +69,31 @@ def read_export(
 )
 def download_export(
     export_id: int, user: CurrentUser, service: ExportServiceDep
-) -> FileResponse:
+) -> StreamingResponse:
     path = service.download(user.id, export_id)
-    return FileResponse(
-        path,
+    # Opened before the response starts: maintenance may delete the file at
+    # any moment, and an open file keeps streaming after it is unlinked.
+    try:
+        handle = path.open("rb")
+    except FileNotFoundError:
+        raise GoneError(
+            "export_file_missing", "The export file is not available"
+        ) from None
+    size = os.fstat(handle.fileno()).st_size
+
+    def chunks() -> Iterator[bytes]:
+        with handle:
+            while block := handle.read(64 * 1024):
+                yield block
+
+    return StreamingResponse(
+        chunks(),
         media_type="text/csv; charset=utf-8",
-        filename=f"tasks-export-{export_id}.csv",
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="tasks-export-{export_id}.csv"'
+            ),
+            "Content-Length": str(size),
+            "Cache-Control": "no-store",
+        },
     )

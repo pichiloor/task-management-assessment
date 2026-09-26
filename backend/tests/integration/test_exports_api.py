@@ -227,6 +227,7 @@ class TestDownload:
             in response.headers["content-disposition"]
         )
         assert response.headers["cache-control"] == "no-store"
+        assert int(response.headers["content-length"]) == len(response.content)
         rows = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
         assert rows[0] == list(HEADER)
         assert [int(r[0]) for r in rows[1:]] == [assigned, mine]
@@ -272,6 +273,33 @@ class TestDownload:
 
         assert response.status_code == 410
         assert response.json()["code"] == "export_file_missing"
+
+
+def test_file_removed_after_validation_returns_410_not_500(
+    client: TestClient,
+    ana: tuple[int, Headers],
+    run_export: Callable[..., None],
+    export_dir: Path,
+) -> None:
+    # Maintenance can delete the file between the expiry check and opening
+    # it: the response must still be a clean 410.
+    export = request_export(client, ana[1])
+    run_export(export["id"])
+    files = client.app.state.export_files  # type: ignore[attr-defined]
+
+    class VanishingFiles:
+        def path(self, export_id: int) -> Path | None:
+            found = files.path(export_id)
+            if found is not None:
+                found.unlink()
+            return found
+
+    client.app.state.export_files = VanishingFiles()  # type: ignore[attr-defined]
+
+    response = client.get(f"{EXPORTS}/{export['id']}/download", headers=ana[1])
+
+    assert response.status_code == 410
+    assert response.json()["code"] == "export_file_missing"
 
 
 def test_openapi_documents_the_export_flow(client: TestClient) -> None:
