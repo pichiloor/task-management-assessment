@@ -487,17 +487,49 @@ class TestMaintenance:
 
         assert stored(uow, export_id).status is ExportStatus.PENDING
 
-    def test_removes_files_past_their_expiry_and_stale_temp_files(
+    def test_file_cleanup_follows_each_exports_stored_expiry(
         self,
+        service: ExportService,
+        runner: ExportRunner,
         maintenance: ExportMaintenance,
+        uow: FakeUnitOfWork,
         files: FakeExportFiles,
         clock: FakeClock,
     ) -> None:
-        maintenance.remove_expired_files()
+        old = service.request(OWNER, TaskListFilters()).id or 0
+        runner.run(old)
+        clock.advance(hours=12)
+        recent = service.request(OWNER, TaskListFilters()).id or 0
+        runner.run(recent)
+        pending = service.request(OWNER, TaskListFilters()).id or 0
+        files.files[pending] = []  # written, not committed yet
+        failed = service.request(OWNER, TaskListFilters()).id or 0
+        files.files[failed] = []
+        runner.fail(failed)
+        files.files[999] = []  # its export no longer exists
+        clock.advance(hours=12)  # `old` expires now; `recent` in 12 h
 
-        ((files_before, temp_before),) = files.removals
-        # Files are written just before the export is marked completed, so a
-        # margin keeps a file until its export has certainly expired.
-        assert files_before < clock() - TTL
-        assert files_before >= clock() - TTL - timedelta(minutes=10)
-        assert temp_before <= clock() - timedelta(hours=1)
+        assert maintenance.remove_expired_files() == 3
+
+        assert files.export_ids() == [recent, pending]
+        assert files.temp_cutoffs == [clock() - timedelta(hours=1)]
+
+    def test_a_shorter_ttl_does_not_remove_files_that_have_not_expired(
+        self,
+        service: ExportService,
+        runner: ExportRunner,
+        uow: FakeUnitOfWork,
+        queue: FakeExportQueue,
+        files: FakeExportFiles,
+        clock: FakeClock,
+    ) -> None:
+        export_id = service.request(OWNER, TaskListFilters()).id or 0
+        runner.run(export_id)  # expires in 24 h
+        clock.advance(hours=2)
+        # Restarted with a 1-hour TTL: the stored expiry still rules.
+        shorter = ExportMaintenance(
+            uow=uow, queue=queue, files=files, clock=clock, ttl=timedelta(hours=1)
+        )
+
+        assert shorter.remove_expired_files() == 0
+        assert files.export_ids() == [export_id]

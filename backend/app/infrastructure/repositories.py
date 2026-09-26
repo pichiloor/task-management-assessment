@@ -228,6 +228,14 @@ class SqlExportRepository:
         )
         return _to_export(row) if row else None
 
+    def get_many(self, export_ids: list[int]) -> list[Export]:
+        if not export_ids:
+            return []
+        rows = self._session.scalars(
+            select(ExportRow).where(ExportRow.id.in_(export_ids))
+        )
+        return [_to_export(row) for row in rows]
+
     def claim_stale_pending(
         self, *, dispatched_before: datetime, limit: int
     ) -> list[Export]:

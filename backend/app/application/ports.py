@@ -81,6 +81,10 @@ class ExportRepository(Protocol):
 
     def save(self, export: Export) -> Export: ...
 
+    def get_many(self, export_ids: list[int]) -> list[Export]:
+        """The exports that exist among the given IDs, in any order."""
+        ...
+
     def claim_stale_pending(
         self, *, dispatched_before: datetime, limit: int
     ) -> list[Export]:
@@ -123,9 +127,15 @@ class ExportFiles(Protocol):
         """The export file, or None if it does not exist."""
         ...
 
-    def remove_older_than(
-        self, *, files_before: datetime, temp_before: datetime
-    ) -> int:
-        """Deletes export files last written before `files_before` and
-        leftover temporary files from before `temp_before`; returns how many."""
+    def export_ids(self) -> list[int]:
+        """IDs of the export files present, in ascending order."""
+        ...
+
+    def delete(self, export_id: int) -> None:
+        """Removes the export file if it exists."""
+        ...
+
+    def remove_temp_older_than(self, before: datetime) -> int:
+        """Deletes leftover temporary files of writes that died; returns how
+        many."""
         ...

@@ -89,19 +89,24 @@ class CsvExportFiles:
         file = self._file(export_id)
         return file if file.is_file() else None
 
-    def remove_older_than(
-        self, *, files_before: datetime, temp_before: datetime
-    ) -> int:
-        """Only files this class names are touched. A download already in
-        progress keeps reading an unlinked file (POSIX semantics)."""
+    def export_ids(self) -> list[int]:
+        ids = []
+        for file in self._directory.glob("export-*.csv"):
+            number = file.name.removeprefix("export-").removesuffix(".csv")
+            if number.isdigit():
+                ids.append(int(number))
+        return sorted(ids)
+
+    def delete(self, export_id: int) -> None:
+        # A download already in progress keeps reading the unlinked file.
+        with suppress(FileNotFoundError):
+            self._file(export_id).unlink()
+
+    def remove_temp_older_than(self, before: datetime) -> int:
         removed = 0
-        for pattern, cutoff in (
-            ("export-*.csv", files_before),
-            (".export-*.tmp", temp_before),
-        ):
-            for file in self._directory.glob(pattern):
-                with suppress(FileNotFoundError):
-                    if file.stat().st_mtime < cutoff.timestamp():
-                        file.unlink()
-                        removed += 1
+        for file in self._directory.glob(".export-*.tmp"):
+            with suppress(FileNotFoundError):
+                if file.stat().st_mtime < before.timestamp():
+                    file.unlink()
+                    removed += 1
         return removed

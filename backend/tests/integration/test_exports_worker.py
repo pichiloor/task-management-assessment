@@ -31,6 +31,7 @@ from app.infrastructure.repositories import (
 )
 from app.infrastructure.settings import AuthSettings, ExportSettings, RateLimitSettings
 from app.infrastructure.worker import (
+    MAINTAIN_EXPORTS,
     CeleryExportQueue,
     create_celery,
     create_worker_app,
@@ -252,19 +253,32 @@ def test_real_worker_completes_an_export_whose_job_was_lost(
         add_task(session, ana.id)
         export_id = add_export(session, ana.id, now=old)
 
-    queue_name = f"test-exports-{uuid.uuid4().hex}"
-    worker_app = create_worker_app(broker_url, lambda: make_runner(committed, tmp_path))
-    worker_app.conf.task_default_queue = queue_name
-    maintenance = ExportMaintenance(
-        uow=sql_unit_of_work(committed),
-        queue=CeleryExportQueue(worker_app),
-        files=CsvExportFiles(tmp_path),
-        clock=lambda: datetime.now(UTC),
-        ttl=TTL,
+    suffix = uuid.uuid4().hex
+    worker_app = create_worker_app(
+        broker_url,
+        lambda: make_runner(committed, tmp_path),
+        lambda: ExportMaintenance(
+            uow=sql_unit_of_work(committed),
+            queue=CeleryExportQueue(worker_app),
+            files=CsvExportFiles(tmp_path),
+            clock=lambda: datetime.now(UTC),
+            ttl=TTL,
+        ),
     )
+    # Queues of its own, so jobs left by other runs cannot interfere.
+    worker_app.conf.task_default_queue = f"test-exports-{suffix}"
+    worker_app.conf.task_routes = {
+        MAINTAIN_EXPORTS: {"queue": f"test-maintenance-{suffix}"}
+    }
 
-    with start_worker(worker_app, pool="solo", perform_ping_check=False):
-        assert maintenance.redispatch_stale() == 1
+    with start_worker(
+        worker_app,
+        pool="solo",
+        perform_ping_check=False,
+        queues=[f"test-maintenance-{suffix}", f"test-exports-{suffix}"],
+    ):
+        # What beat does every minute: the task goes through the broker.
+        worker_app.send_task(MAINTAIN_EXPORTS)
         deadline = time.monotonic() + 20
         status = ExportStatus.PENDING
         while status is ExportStatus.PENDING and time.monotonic() < deadline:

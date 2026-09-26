@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 RUN_EXPORT: Final = "exports.run"
 MAINTAIN_EXPORTS: Final = "exports.maintain"
 MAINTENANCE_INTERVAL: Final = 60.0  # seconds
+# Its own queue, so maintenance never waits behind a backlog of exports.
+MAINTENANCE_QUEUE: Final = "maintenance"
 MAX_RETRIES: Final = 3
 
 _PUBLISH_ERRORS = (KombuOperationalError, RedisError, OSError)
@@ -123,12 +125,14 @@ def create_worker_app(
                 )
 
         app.task(name=MAINTAIN_EXPORTS, shared=False)(maintain_exports)
+        # No expiry: runs delayed by a backlog still happen. Overlapping runs
+        # are harmless (SKIP LOCKED gives them disjoint exports; deleting a
+        # file twice is a no-op).
+        app.conf.task_routes = {MAINTAIN_EXPORTS: {"queue": MAINTENANCE_QUEUE}}
         app.conf.beat_schedule = {
             "maintain-exports": {
                 "task": MAINTAIN_EXPORTS,
                 "schedule": MAINTENANCE_INTERVAL,
-                # A missed run is not worth doing late: the next one repeats it.
-                "options": {"expires": MAINTENANCE_INTERVAL},
             }
         }
     return app

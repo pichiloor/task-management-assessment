@@ -124,6 +124,8 @@ services:
       - worker
       - --loglevel=INFO
       - --concurrency=2
+      # Maintenance first, so it is picked up before queued exports.
+      - --queues=maintenance,celery
     volumes:
       - exports:/data/exports
     healthcheck:

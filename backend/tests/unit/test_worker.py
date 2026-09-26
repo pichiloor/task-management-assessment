@@ -13,6 +13,7 @@ from app.application.tasks import TaskListFilters
 from app.domain.export import ExportStatus
 from app.infrastructure.worker import (
     MAINTAIN_EXPORTS,
+    MAINTENANCE_QUEUE,
     MAX_RETRIES,
     RUN_EXPORT,
     CeleryExportQueue,
@@ -196,3 +197,7 @@ def test_maintenance_task_redispatches_and_cleans_up() -> None:
     schedule = app.conf.beat_schedule
     assert [e["task"] for e in schedule.values()] == [MAINTAIN_EXPORTS]
     assert all(e["schedule"] <= 60 for e in schedule.values())
+    # Never discarded for waiting (a backlog of exports must not starve it),
+    # and routed to its own queue so it does not wait behind export jobs.
+    assert all("expires" not in e.get("options", {}) for e in schedule.values())
+    assert app.conf.task_routes[MAINTAIN_EXPORTS] == {"queue": MAINTENANCE_QUEUE}

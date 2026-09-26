@@ -150,6 +150,9 @@ class InMemoryExportRepository:
         self._rows[export.id] = replace(export)
         return replace(export)
 
+    def get_many(self, export_ids: list[int]) -> list[Export]:
+        return [replace(self._rows[i]) for i in export_ids if i in self._rows]
+
     def claim_stale_pending(
         self, *, dispatched_before: datetime, limit: int
     ) -> list[Export]:
@@ -207,7 +210,7 @@ class FakeExportFiles:
         self.files: dict[int, list[Task]] = {}
         self.writes = 0
         self.broken = False
-        self.removals: list[tuple[datetime, datetime]] = []
+        self.temp_cutoffs: list[datetime] = []
 
     def write(self, export_id: int, tasks: Iterable[Task]) -> int:
         self.writes += 1
@@ -219,8 +222,12 @@ class FakeExportFiles:
     def path(self, export_id: int) -> Path | None:
         return Path(f"/exports/{export_id}.csv") if export_id in self.files else None
 
-    def remove_older_than(
-        self, *, files_before: datetime, temp_before: datetime
-    ) -> int:
-        self.removals.append((files_before, temp_before))
+    def export_ids(self) -> list[int]:
+        return sorted(self.files)
+
+    def delete(self, export_id: int) -> None:
+        self.files.pop(export_id, None)
+
+    def remove_temp_older_than(self, before: datetime) -> int:
+        self.temp_cutoffs.append(before)
         return 0

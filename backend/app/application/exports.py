@@ -11,7 +11,7 @@ polling substitute for a transactional outbox (documented).
 """
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Final
 
@@ -39,9 +39,6 @@ REDISPATCH_AFTER: Final = timedelta(minutes=2)
 # Pending for this long since it was requested: stop trying.
 GIVE_UP_AFTER: Final = timedelta(minutes=30)
 REDISPATCH_BATCH: Final = 100
-# Files are written just before the export is marked completed; the margin
-# keeps a file until its export has certainly expired.
-FILE_EXPIRY_MARGIN: Final = timedelta(minutes=5)
 # A temporary file this old belongs to a write that died.
 TEMP_FILE_MAX_AGE: Final = timedelta(hours=1)
 
@@ -205,8 +202,23 @@ class ExportMaintenance:
         return published
 
     def remove_expired_files(self) -> int:
+        """Deletes each file whose export expired (by its stored expires_at,
+        not the current TTL setting), failed or no longer exists, plus stale
+        temporary files. Files of pending exports are kept: a worker may be
+        about to commit them."""
         now = self._clock()
-        return self._files.remove_older_than(
-            files_before=now - self._ttl - FILE_EXPIRY_MARGIN,
-            temp_before=now - TEMP_FILE_MAX_AGE,
+        on_disk = self._files.export_ids()
+        with self._uow() as tx:
+            exports = {e.id: e for e in tx.exports.get_many(on_disk)}
+        removable = [i for i in on_disk if _file_is_removable(exports.get(i), now)]
+        for export_id in removable:
+            self._files.delete(export_id)
+        return len(removable) + self._files.remove_temp_older_than(
+            now - TEMP_FILE_MAX_AGE
         )
+
+
+def _file_is_removable(export: Export | None, now: datetime) -> bool:
+    if export is None or export.status is ExportStatus.FAILED:
+        return True
+    return export.status is ExportStatus.COMPLETED and export.is_expired(now)

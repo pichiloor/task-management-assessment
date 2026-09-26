@@ -162,6 +162,7 @@ def test_repositories_never_commit(session: Session, me: int) -> None:
     export = exports.add(new_export(me))
     exports.get(export.id or 0)
     exports.get_for_update(export.id or 0)
+    exports.get_many([export.id or 0])
     export.fail("export_failed", now=NOW)
     exports.save(export)
     tasks.delete(task.id or 0)
@@ -426,3 +427,14 @@ def test_unit_of_work_commits_on_success_and_rolls_back_on_error(
     with factory() as tx:
         assert tx.exports.get(kept or 0) is not None
         assert tx.exports.get(lost or 0) is None
+
+
+def test_get_many_returns_existing_exports_only(session: Session, me: int) -> None:
+    exports = SqlExportRepository(session)
+    first = exports.add(new_export(me)).id or 0
+    second = exports.add(new_export(me)).id or 0
+
+    found = exports.get_many([second, 999_999, first])
+
+    assert sorted(e.id or 0 for e in found) == [first, second]
+    assert exports.get_many([]) == []
