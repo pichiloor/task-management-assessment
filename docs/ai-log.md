@@ -426,14 +426,39 @@
   - Suggestions adopted: only one request probes Redis after the retry window
     (others stay in memory); only storage errors trigger the fallback, so bugs
     are not swallowed; a multi-hop X-Forwarded-For test; a test that a blocked
-    login does no Argon2 work; a Redis recovery test; Compose passes the
-    `RATE_LIMIT_*` settings.
+    login does no Argon2 work; a Redis recovery test; Compose passes
+    `RATE_LIMIT_LOGIN`, `RATE_LIMIT_API` and `RATE_LIMIT_TRUSTED_PROXIES`
+    (the key prefix was added in the follow-up; the storage URI is derived
+    from `REDIS_URL`).
 - Claude's own test mistake, caught by checking: the first concurrency test
   paused after `MemoryStorage.get` removed the key, not between the expiry
   check and the removal, so it passed even without the lock. Rewritten; now it
-  fails 3/3 without the lock and passes 3/3 with it. The single-probe test was
+  fails 3/3 without the lock and passes 3/3 with it (the lock itself turned
+  out to be insufficient; see the follow-up). The single-probe test was
   checked the same way (fails when every thread may probe). In `1374d8b` the
   concurrency tests had failed only because the new constructor arguments did
   not exist yet, not because of the race.
 - Results: `backend-tests` → 250 passed with deprecations as errors; the
   rebuilt `api` container is healthy.
+- Follow-up review by Codex (`gpt-6-astra`) found four more issues, all
+  accepted (tests first in `112d650`):
+  - Medium: the lock did not cover `limits`' MemoryStorage cleanup, which runs
+    on a timer thread and could delete a just-renewed counter (Codex
+    reproduced two admissions under `1/minute`). The in-memory counter is now
+    our own `InMemoryFixedWindow`: read, reset and increment under one lock,
+    pruning in the calling thread, no background threads.
+  - Medium: a successful probe published "recovered" after releasing the
+    probe lock, so it could erase a newer failure, and a waiting request did
+    not re-check the deadline. The outcome is now published under the lock,
+    and the probe re-checks the deadline first.
+  - Medium: the strict regex rejected valid limits (`5/MINUTE`, `5/month`,
+    `5/2seconds`). Validation now reuses `limits`' own `SINGLE_EXPR` grammar
+    and only adds: one expression, positive amount and period.
+  - Low: Compose did not pass `RATE_LIMIT_KEY_PREFIX`; added, and the log
+    now lists exactly what is passed.
+- Claude's test mistakes in this round, caught by reverting each fix: the new
+  race test first paused before reading the counter instead of between read
+  and write, and the revalidation test's fake clock never reached the probe;
+  both passed without the fix. Rewritten; each now fails 3/3 without its fix.
+- Results: `backend-tests` → 258 passed with deprecations as errors; live in
+  the rebuilt `api` container the 6th bad login still returns 429.

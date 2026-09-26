@@ -61,6 +61,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       RATE_LIMIT_LOGIN: ${RATE_LIMIT_LOGIN:-5/minute}
       RATE_LIMIT_API: ${RATE_LIMIT_API:-120/minute}
+      RATE_LIMIT_KEY_PREFIX: ${RATE_LIMIT_KEY_PREFIX:-task-management}
       # Set to nginx's address when it is added in front of the API.
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1}
     command:

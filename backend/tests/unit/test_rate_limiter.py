@@ -13,12 +13,14 @@ from app.infrastructure.settings import RateLimitSettings
 UNREACHABLE = "redis://127.0.0.1:1/0"
 
 
-def slow_clock() -> float:
-    """Pauses inside the counter's critical section: without the lock, two
-    threads read the same count and both are admitted."""
-    now = time.monotonic()
-    time.sleep(0.05)
-    return now
+class SlowWindow(InMemoryFixedWindow):
+    """Pauses between reading a counter and writing it back (pruning runs
+    there). Without the lock, several threads read the same count and are
+    all admitted."""
+
+    def _maybe_prune(self, now: float) -> None:
+        time.sleep(0.05)
+        super()._maybe_prune(now)
 
 
 class BrokenStorage(MemoryStorage):
@@ -59,7 +61,7 @@ def test_concurrent_hits_on_the_memory_fallback_are_not_lost() -> None:
     limiter = RateLimiter(
         UNREACHABLE,
         primary_storage=BrokenStorage(RedisConnectionError("down")),
-        fallback=InMemoryFixedWindow(clock=slow_clock),
+        fallback=SlowWindow(),
     )
     limiter.hit("1/minute", "warm-up")  # marks the primary as down
 
@@ -200,10 +202,12 @@ def test_a_newer_failure_stops_a_pending_probe() -> None:
     reads = [0]
 
     def clock() -> float:
+        # Reads: 1 time check and 2 failure mark (first hit), 3 time check and
+        # 4 re-check inside the probe (second hit).
         reads[0] += 1
-        if reads[0] == 3:  # after the initial failure and the time check
-            limiter._primary_down_until = 61.0  # noqa: SLF001
-        return 31.0 if reads[0] > 1 else 0.0
+        if reads[0] == 4:
+            limiter._primary_down_until = 61.0  # another probe just failed
+        return 0.0 if reads[0] <= 2 else 31.0
 
     limiter = RateLimiter(UNREACHABLE, primary_storage=broken, clock=clock)
     limiter.hit("5/minute", "k")
