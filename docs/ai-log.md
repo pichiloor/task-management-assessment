@@ -630,3 +630,12 @@
   by the real client address and unaffected by a forged X-Forwarded-For;
   in the browser: no console errors and no horizontal scroll on either
   width.
+- Codex review, three medium findings, all accepted: nginx resolved `api`
+  once at startup, so a recreated API container with a new address gave
+  502s until nginx restarted (now Docker's resolver with a 10 s validity;
+  checked by forcing the API onto a new address, `.2` → `.3`, and calling
+  it through nginx); an export whose first status request failed (for
+  example a 429) stopped polling for good, since the query had no data yet
+  (the accepted job now seeds the query); the modal did not keep Tab focus
+  inside, so keyboard users could reach and trigger background buttons
+  (focus now wraps). Both frontend fixes have a test that failed before.

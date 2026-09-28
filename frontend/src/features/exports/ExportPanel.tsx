@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ExportJob } from "../../api/endpoints";
 import { useApi } from "../auth/auth-context";
@@ -17,11 +17,17 @@ type Props = {
  * then downloads it with the bearer token. */
 export function ExportPanel({ filters, disabled }: Props) {
   const api = useApi();
+  const queryClient = useQueryClient();
   const [exportId, setExportId] = useState<number | null>(null);
 
   const start = useMutation({
     mutationFn: () => api.requestExport({ ...filters }),
-    onSuccess: (job) => setExportId(job.id),
+    onSuccess: (job) => {
+      // Seeds the job query with the accepted (pending) job, so polling
+      // keeps going even if a status request fails along the way.
+      queryClient.setQueryData(["export", job.id], job);
+      setExportId(job.id);
+    },
   });
 
   const job = useQuery({
@@ -41,7 +47,8 @@ export function ExportPanel({ filters, disabled }: Props) {
 
   const current = job.data;
   const running = start.isPending || current?.status === "pending";
-  const error = start.error ?? job.error ?? download.error;
+  // A failed poll is only worth showing once the job has stopped polling.
+  const error = start.error ?? (running ? null : job.error) ?? download.error;
 
   return (
     <section className="export-panel" aria-label="CSV export">

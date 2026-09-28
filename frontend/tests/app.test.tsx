@@ -227,3 +227,47 @@ describe("CSV export", () => {
     click.mockRestore();
   });
 });
+
+describe("export polling", () => {
+  beforeEach(loggedIn);
+
+  it("keeps polling after a failed status request", async () => {
+    let polls = 0;
+    const pending = { id: 8, status: "pending", filters: { status: null, due_from: null, due_to: null }, row_count: null, error_code: null, created_at: "2026-09-28T12:00:00Z", finished_at: null, expires_at: null, download_url: null };
+    fakeApi({
+      ...common,
+      "GET /api/v1/tasks": () => json(page([task()])),
+      "POST /api/v1/exports": () => json(pending, 202),
+      "GET /api/v1/exports/8": () =>
+        ++polls === 1
+          ? json({ detail: "Too many requests", code: "rate_limited" }, 429, { "Retry-After": "1" })
+          : json({ ...pending, status: "completed", row_count: 1, download_url: "/api/v1/exports/8/download" }),
+    });
+    const user = userEvent.setup();
+    renderApp("/");
+
+    await user.click(await screen.findByRole("button", { name: "Export CSV" }));
+    expect(await screen.findByText(/Ready: 1 row/, {}, { timeout: 5000 })).toBeInTheDocument();
+  });
+});
+
+describe("modal", () => {
+  beforeEach(loggedIn);
+
+  it("keeps keyboard focus inside the dialog", async () => {
+    fakeApi({ ...common, "GET /api/v1/tasks": () => json(page([])) });
+    const user = userEvent.setup();
+    renderApp("/");
+
+    await user.click(await screen.findByRole("button", { name: "+ New task" }));
+    const dialog = screen.getByRole("dialog");
+    for (let i = 0; i < 12; i++) {
+      await user.tab();
+      expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    }
+    for (let i = 0; i < 3; i++) {
+      await user.tab({ shift: true });
+      expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    }
+  });
+});
