@@ -699,3 +699,25 @@
   listed CHECK constraints and `NULLS LAST`, which SQLite supports (Codex
   checked both). The reason is now the PostgreSQL features the code really
   depends on: `SKIP LOCKED`, advisory locks, timeouts, strict types.
+
+## Step 14: clean-clone check (2026-09-28)
+
+- Done by Claude (Claude Code, Opus 5.5). The development stack was stopped;
+  the repository was cloned into an empty directory and the README followed
+  as written, under a separate Compose project so every volume started
+  empty.
+- `./scripts/setup-env.sh` created `.env` with mode `600`;
+  `docker compose up -d --build --wait` brought every service to healthy in
+  32 s (images were cached locally; a first run also downloads them).
+- Chromium (Playwright) against the fresh stack: login, filters, export and
+  download (`tasks-export-1.csv`), new task and edit dialogs at 1280 and 390
+  px; no console errors, no horizontal scroll.
+- README test commands from the clone: frontend 27 passed and `tsc` clean;
+  backend unit tests on the host 239 passed; full backend suite in Docker
+  393 passed, 98.51% coverage.
+- Over HTTP: Bruno (assignee) got 403 `forbidden_field` renaming Ana's task,
+  200 completing it, 403 `not_task_creator` deleting it; Carla got 404; the
+  login limit returned 429 with `Retry-After: 60`.
+- Found for the presentation: the login limit counts successful logins
+  too, so switching users during a live demo uses it up; the presentation
+  guide now shows the 429 last.

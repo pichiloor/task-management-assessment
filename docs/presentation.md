@@ -6,6 +6,10 @@ the repository on GitHub, the IDE, and the app at <http://localhost:8080>.
 Before the call: `docker compose up -d --build --wait`, log in once as Ana,
 open Swagger in a second tab, have the CI page open.
 
+The login limit (5 per minute per IP) counts every attempt, successful or
+not. Switching users and authorizing Swagger already use several, so show
+the 429 last, or wait a minute after it.
+
 ## 1. User story (1 min)
 
 *As a member of a small team, I want to create tasks, assign them to
@@ -30,9 +34,11 @@ the status). Each user sees only tasks they are part of.
 6. Delete a task as its creator (confirmation dialog).
 7. Resize to phone width (or DevTools): same features, no horizontal scroll.
 8. Swagger: **Authorize** with Ana's email and password, run
-   `GET /api/v1/tasks`. Six wrong logins in a minute → 429 with `Retry-After`.
+   `GET /api/v1/tasks`.
 9. `docker compose stop redis`, reload: tasks still work, `/api/health`
    says `degraded`. Start it again.
+10. Last: repeated wrong logins → 429 with `Retry-After` (the limit counts
+    every login attempt in the minute, including the ones above).
 
 ## 3. Architecture (4 min)
 
