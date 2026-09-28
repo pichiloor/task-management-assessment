@@ -125,7 +125,8 @@ by hand under `backend/migrations/versions/`, wrapping full constraint names in
 server defaults with the models; Alembic does not compare CHECK constraints,
 so `test_schema_constraints.py` checks their names and behavior.
 CI (`.github/workflows/ci.yml`, on push to `main`, pull requests and manual
-runs) has four jobs: `quality` runs `pre-commit run --all-files` (so CI and
+runs) has four jobs: `quality` runs `pre-commit run --all-files`, which includes ESLint and
+`tsc` (so CI and
 local hooks are the same checks); `backend-tests` runs the full suite on the
 runner with PostgreSQL and Redis as `services` (same image versions as
 Compose, `TEST_POSTGRES_DB` set so integration tests run, coverage under 80%

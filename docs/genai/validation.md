@@ -8,9 +8,9 @@ below was produced by running the command; the dated details are in the
 
 | Check | What it catches | When |
 | --- | --- | --- |
-| Tests written first, run red | Code that does not do what was asked | Every feature and every fix |
+| Tests written first, run red | Code that does not do what was asked | Domain, use cases, auth, endpoints, seed, rate limiting (separate red commits); repositories and export worker (tests first, same commit as the code) |
 | "Fails without the fix" | Tests that pass for the wrong reason | Every review fix: the fix is reverted or the test run before it |
-| mypy strict, Ruff, ESLint, TypeScript strict | Type errors, dead code, unsafe patterns | Every commit (pre-commit) and CI |
+| mypy strict, Ruff, ESLint, `tsc` (TypeScript strict) | Type errors, dead code, unsafe patterns | Every commit (pre-commit) and CI |
 | import-linter | Layer violations (e.g. a use case importing SQLAlchemy) | Every commit and CI |
 | Integration tests on real PostgreSQL and Redis | Behavior SQLite or mocks would hide: CHECK constraints, locks, `NULLS LAST`, Redis failover, a real Celery worker | Docker and CI |
 | Review by a second model | Design flaws, races, security issues the first model did not see | After every change, repeated until "no new defects" |

@@ -20,7 +20,8 @@ The dated, step-by-step log of what each tool did is
 | Tool | Role |
 | --- | --- |
 | Claude Code (Claude Opus 5.5) | Wrote the plan with the author, then the code, tests and documentation, one approved step at a time |
-| OpenAI Codex (`gpt-6-astra`), read-only | Built the step 1 scaffold; afterwards reviewed every change by Claude Code, round after round, until it found no new defects |
+| OpenAI Codex | Built the step 1 scaffold (repository, tooling, empty structure; the model identifier of that session was not recorded) |
+| OpenAI Codex, model `gpt-6-astra`, read-only sandbox | Reviewed every change by Claude Code from step 2 on, round after round, until it found no new defects |
 | The author | Approved the plan and each step, chose libraries, accepted or rejected each finding, decided every push |
 
 Using two models from different vendors was deliberate: a reviewer that

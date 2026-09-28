@@ -137,8 +137,11 @@ More detail, including the export flow and the data model:
 ## API
 
 All endpoints are under `/api`; business endpoints are under `/api/v1` and
-need `Authorization: Bearer <token>`. Errors share one shape:
-`{"detail": "...", "code": "task_not_found"}`.
+need `Authorization: Bearer <token>`. Business errors (401, 403, 404, 409,
+410, 429, 503 and business-rule 422s) share one shape:
+`{"detail": "...", "code": "task_not_found"}`; request validation errors
+keep FastAPI's standard 422 shape (`detail` is a list). Swagger documents
+both.
 
 | Method and path | Description |
 | --- | --- |
@@ -172,15 +175,15 @@ curl -s "http://localhost:8080/api/v1/tasks?status=pending&page_size=5" -H "Auth
 | Frontend tests (Vitest + React Testing Library) | 27 tests | host or CI |
 
 Latest results: **393 backend tests passed, 98.51% line and branch coverage**
-(the minimum is 80%), and **27 frontend tests passed**. CI runs everything
-on every push; see the badge above.
+(the minimum is 80%), and **27 frontend tests passed**. CI runs all of it
+on every push to `main` and every pull request; see the badge above.
 
 ```sh
 # Backend: full suite with coverage, in Docker against a separate *_test database
 docker compose run --rm --build backend-tests pytest --cov=app
 
 # Backend: unit tests only, on the host (needs uv)
-cd backend && uv run pytest tests/unit
+(cd backend && uv run pytest tests/unit)
 
 # Frontend (needs Node 24)
 npm --prefix frontend ci
@@ -189,15 +192,18 @@ npm --prefix frontend run typecheck
 ```
 
 TDD was used for the domain rules, use cases, authentication, task
-endpoints, seed, rate limiting and every review fix: the test commit was
-made while the suite failed, then the implementation. For the repositories
-(step 4) and the export worker (step 9) the tests were written first but
-committed with the code, so they are not presented as TDD. The
-[AI log](docs/ai-log.md) lists the red/green commit pairs.
+endpoints, seed and rate limiting: the test commit was made while the suite
+failed, then the implementation. For the repositories (step 4) and the
+export worker (step 9) the tests were written first but committed with the
+code, so they are not presented as TDD. Every fix found in review has a
+test that was run and seen failing before the fix; for most backend fixes
+that test was committed separately first, while the frontend fixes of step
+11 put the test and the fix in one commit. The [AI log](docs/ai-log.md)
+lists the red/green commit pairs.
 
 Quality tools, all run by pre-commit and again in CI:
 Ruff (lint and format), mypy in strict mode, import-linter (architecture
-contracts), ESLint, TypeScript strict, detect-secrets and basic file checks.
+contracts), ESLint, `tsc` (TypeScript strict), detect-secrets and basic file checks.
 Dependencies are locked (`uv.lock`, `package-lock.json`), Docker images and
 GitHub Actions are pinned.
 
@@ -227,9 +233,11 @@ The full list with the alternatives considered is in
 - **Synchronous SQLAlchemy 2.** The workload is short CRUD queries; FastAPI
   runs sync endpoints in a thread pool. Async would add complexity without a
   measured need.
-- **Permissions in the domain.** Visibility and who may change what are pure
-  functions in `app/domain/permissions.py`, used by every use case and by the
-  export worker, so the API and the CSV cannot disagree.
+- **Permissions in the domain.** Who may see, change or delete a task, and
+  who may read an export, are pure functions in `app/domain/permissions.py`
+  that the use cases call. Lists are filtered in SQL instead, by one
+  visibility predicate shared by the task listing and the CSV export, so
+  the list and the file cannot disagree.
 - **The database enforces invariants too.** CHECK constraints on status,
   lowercase email and `completed_at` being set exactly when a task is
   completed, so a bug in one layer cannot store an inconsistent row.

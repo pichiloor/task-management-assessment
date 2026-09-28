@@ -28,9 +28,11 @@ halfway leaves nothing saved; a test checks that a PATCH failing after a
 valid change persists nothing.
 
 **Permissions as domain functions, 404 for invisible tasks.** Returning 403
-for a task the user cannot see would reveal that it exists. The same
-functions are used by the export worker, so the CSV never contains a task
-the user cannot see in the list.
+for a task the user cannot see would reveal that it exists. Single-task
+operations go through these functions; lists are filtered by one SQL
+visibility predicate (`_conditions` in `repositories.py`) that the task
+listing and the CSV export share, so the file never contains a task the user
+cannot see in the list.
 
 **PATCH applies only the fields sent.** `model_fields_set` distinguishes
 "omitted" from "null"; `assignee_id` and `due_date` accept null to clear,

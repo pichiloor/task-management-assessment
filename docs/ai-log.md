@@ -675,3 +675,15 @@
   formula guard, the partial index). The redirect file
   `docs/genai/ai-log.md` was removed; the index is `docs/genai/README.md`.
 - Screenshots in `docs/screenshots/` are from the Chromium check of step 11.
+- Codex review of the documentation, seven findings, all accepted: the
+  README said every error has `{detail, code}`, but request validation
+  errors keep FastAPI's list shape; it said the export worker calls the
+  domain permission functions, but lists (task listing and export) share an
+  SQL visibility predicate instead; it claimed separate red commits for
+  every review fix, but the step 11 frontend fixes committed test and fix
+  together; it listed TypeScript among the pre-commit checks, which it was
+  not (a `tsc` hook was added instead of changing the sentence); it
+  attributed the scaffold to `gpt-6-astra`, whose model was never verified
+  for that session; it said CI runs on every push (only `main` and pull
+  requests); and a test command left the shell in `backend/`, breaking the
+  next one.

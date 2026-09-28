@@ -47,3 +47,9 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: tsc
+        name: TypeScript strict (tsc)
+        entry: npm --prefix frontend run typecheck
+        language: system
+        pass_filenames: false
+        always_run: true

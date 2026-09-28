@@ -51,8 +51,9 @@ around rules that were already tested.
 
 Claude Code wrote most of the code. It was never accepted on its own word:
 
-- Tests were written before the code and run red first; for review fixes, a
-  test had to fail without the fix. Several times the AI's own test turned out
+- Tests were written before the code and, for most steps, committed and run
+  red first; for review fixes, a test had to be seen failing without the
+  fix. Several times the AI's own test turned out
   to pass without the fix (for example, race tests that paused at the wrong
   moment) and had to be rewritten until it did fail.
 - A different model, OpenAI Codex (`gpt-6-astra`), reviewed every change in a
