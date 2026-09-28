@@ -650,3 +650,8 @@
   React hooks lint rule rejects; the token now lives only in state, the
   conditional logout is a functional update, and storage and cache follow
   the state in an effect.
+- Third review: the dialog flag was cleared by StrictMode's extra cleanup and
+  never set again, so in development a successful save left the dialog
+  open and a failed one showed no error. The flag is now set in the effect
+  setup, and the test renderer uses StrictMode like `main.tsx` (the create
+  test failed with it before the fix).

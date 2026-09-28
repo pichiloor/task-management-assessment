@@ -1,5 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
+import { StrictMode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { App } from "../../src/App";
 import { AuthProvider } from "../../src/features/auth/AuthProvider";
@@ -10,13 +11,16 @@ export function renderApp(path = "/") {
   queryClient.setDefaultOptions({
     queries: { ...queryClient.getDefaultOptions().queries, retry: false },
   });
+  // StrictMode as in main.tsx: effects run, clean up and run again.
   return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </MemoryRouter>
-    </QueryClientProvider>,
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[path]}>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </StrictMode>,
   );
 }

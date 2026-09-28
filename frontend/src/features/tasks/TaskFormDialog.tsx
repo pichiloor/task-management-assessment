@@ -27,7 +27,13 @@ export function TaskFormDialog({ task, users, onClose }: Props) {
   // A save can finish after this dialog was cancelled; closing then would
   // close whichever dialog is open by that time.
   const open = useRef(true);
-  useEffect(() => () => void (open.current = false), []);
+  useEffect(() => {
+    // Set again on setup: StrictMode runs cleanup and setup once more.
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
   const editing = task !== undefined;
 
   function set<K extends keyof Values>(key: K, value: Values[K]) {
