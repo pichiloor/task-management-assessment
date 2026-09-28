@@ -792,3 +792,22 @@
   `presentation.md` and `genai/validation.md`; screenshots retaken from a
   throwaway Compose project with only the demo data, so they show the sort
   buttons, the icon actions and the creation date.
+
+## Late deletion closing a new dialog (2026-09-28, after step 14)
+
+- Reported by a separate review the author ran on the published commit
+  `c0c76e8`: confirm a deletion, cancel its dialog while the request is
+  still running, open "New task" and type; when the deletion finished,
+  `setDialog(null)` closed the new dialog and lost the draft. It is the
+  same class of race Codex had found in the task form (fixed earlier), but
+  in `TasksPage`'s delete handler, which Claude had not checked.
+- Test first (failed: the "New task" dialog was gone), then the fix: the
+  deletion closes the dialog only if it is still its own (`delete` for the
+  same task id). The other dialog closings are user actions that run at
+  once (Cancel, Escape, backdrop), so they cannot race. 34 passed.
+- Codex (`gpt-6-astra`) confirmed the fix and, asked to look for other
+  late completions, found one more: the task form stayed editable while
+  saving, so edits typed during the request were lost when the dialog
+  closed on success. The fields are now in a `<fieldset disabled>` while
+  saving (Cancel stays available). Test first (failed: the title was still
+  editable); 35 passed.

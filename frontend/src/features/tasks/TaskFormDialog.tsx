@@ -77,73 +77,77 @@ export function TaskFormDialog({ task, users, onClose }: Props) {
   return (
     <Modal title={editing ? "Edit task" : "New task"} onClose={onClose}>
       <form className="task-form" onSubmit={handleSubmit} noValidate>
-        <Field label="Title">
-          {(id) => (
-            <input
-              id={id}
-              value={values.title}
-              maxLength={TITLE_MAX_LENGTH}
-              onChange={(e) => set("title", e.target.value)}
-              required
-            />
-          )}
-        </Field>
-        <Field label="Description">
-          {(id) => (
-            <textarea
-              id={id}
-              rows={4}
-              value={values.description}
-              maxLength={DESCRIPTION_MAX_LENGTH}
-              onChange={(e) => set("description", e.target.value)}
-            />
-          )}
-        </Field>
-        <div className="form-row">
-          <Field label="Assignee">
-            {(id) => (
-              <select
-                id={id}
-                value={values.assignee}
-                onChange={(e) => set("assignee", e.target.value)}
-              >
-                <option value="">Unassigned</option>
-                {users.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </Field>
-          <Field label="Due date">
+        {/* Locked while saving: edits made during the request would be
+            lost when the dialog closes on success. */}
+        <fieldset className="form-fields" disabled={saving}>
+          <Field label="Title">
             {(id) => (
               <input
                 id={id}
-                type="date"
-                value={values.dueDate}
-                onChange={(e) => set("dueDate", e.target.value)}
+                value={values.title}
+                maxLength={TITLE_MAX_LENGTH}
+                onChange={(e) => set("title", e.target.value)}
+                required
               />
             )}
           </Field>
-          {editing && (
-            <Field label="Status">
+          <Field label="Description">
+            {(id) => (
+              <textarea
+                id={id}
+                rows={4}
+                value={values.description}
+                maxLength={DESCRIPTION_MAX_LENGTH}
+                onChange={(e) => set("description", e.target.value)}
+              />
+            )}
+          </Field>
+          <div className="form-row">
+            <Field label="Assignee">
               {(id) => (
                 <select
                   id={id}
-                  value={values.status}
-                  onChange={(e) => set("status", e.target.value as TaskStatus)}
+                  value={values.assignee}
+                  onChange={(e) => set("assignee", e.target.value)}
                 >
-                  {STATUSES.map((status) => (
-                    <option key={status} value={status}>
-                      {STATUS_LABELS[status]}
+                  <option value="">Unassigned</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
                     </option>
                   ))}
                 </select>
               )}
             </Field>
-          )}
-        </div>
+            <Field label="Due date">
+              {(id) => (
+                <input
+                  id={id}
+                  type="date"
+                  value={values.dueDate}
+                  onChange={(e) => set("dueDate", e.target.value)}
+                />
+              )}
+            </Field>
+            {editing && (
+              <Field label="Status">
+                {(id) => (
+                  <select
+                    id={id}
+                    value={values.status}
+                    onChange={(e) => set("status", e.target.value as TaskStatus)}
+                  >
+                    {STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {STATUS_LABELS[status]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+            )}
+          </div>
+        </fieldset>
         {error && (
           <p className="error" role="alert">
             {error}

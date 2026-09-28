@@ -66,7 +66,13 @@ export function TasksPage() {
   function confirmDelete(task: Task) {
     remove.mutate(task.id, {
       onSuccess: () => {
-        setDialog(null);
+        // Close only this deletion's dialog: it may have been cancelled
+        // while the request ran and another dialog opened since.
+        setDialog((current) =>
+          current?.kind === "delete" && current.task.id === task.id
+            ? null
+            : current,
+        );
         toast.success("Task deleted");
       },
     });

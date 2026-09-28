@@ -62,8 +62,8 @@ What was designed and tested explicitly, beyond the happy path:
   download (file closed), concurrent seed runs (advisory lock), a recreated
   API container (nginx re-resolves it).
 - **Frontend.** Rejected token → login; a late 401 from an old session is
-  ignored; a save finishing after its dialog was closed does not close the
-  dialog opened next (its success notification still shows, since the task
+  ignored; a save or a deletion finishing after its dialog was closed does
+  not close the dialog opened next, the task form is locked while saving (its success notification still shows, since the task
   was saved); a failed status poll does not stop the export; focus stays
   inside dialogs.
 
@@ -111,7 +111,7 @@ queries use batches of 1000 IDs to stay under the PostgreSQL protocol's
 | Check | Result |
 | --- | --- |
 | Backend suite in Docker (`pytest --cov=app -W error::DeprecationWarning`) | 400 passed, 98.52% line and branch coverage |
-| Frontend (`vitest run`) | 33 passed |
+| Frontend (`vitest run`) | 35 passed |
 | `tsc --noEmit`, ESLint | Clean |
 | pre-commit, all hooks | Passed |
 | Full stack through nginx | Login, CRUD, filters, export and download, health, Swagger, security headers |

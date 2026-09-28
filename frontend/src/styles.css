@@ -550,6 +550,20 @@ textarea {
   gap: 0.9rem;
 }
 
+.form-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.form-fields:disabled {
+  opacity: 0.7;
+}
+
 .form-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));

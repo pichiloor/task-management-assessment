@@ -183,10 +183,10 @@ curl -s "http://localhost:8080/api/v1/tasks?status=pending&page_size=5" -H "Auth
 | --- | --- | --- |
 | Backend unit tests (domain, use cases with in-memory fakes, security, rate limiter) | 15 files | host or Docker |
 | Backend integration tests (real PostgreSQL and Redis, HTTP through FastAPI, a real Celery worker) | 11 files | Docker or CI |
-| Frontend tests (Vitest + React Testing Library) | 33 tests | host or CI |
+| Frontend tests (Vitest + React Testing Library) | 35 tests | host or CI |
 
 Latest results: **400 backend tests passed, 98.52% line and branch coverage**
-(the minimum is 80%), and **33 frontend tests passed**. CI runs all of it
+(the minimum is 80%), and **35 frontend tests passed**. CI runs all of it
 on every push to `main` and every pull request; see the badge above.
 
 ```sh

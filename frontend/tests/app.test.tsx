@@ -448,3 +448,57 @@ describe("notifications", () => {
     expect(screen.queryByText(/created$/)).toBeNull();
   });
 });
+
+describe("late delete", () => {
+  beforeEach(loggedIn);
+
+  it("a delete finishing after its dialog was cancelled does not close a new one", async () => {
+    let finish: (r: Response) => void = () => {};
+    fakeApi({
+      ...common,
+      "GET /api/v1/tasks": () => json(page([task()])),
+      "DELETE /api/v1/tasks/10": () => new Promise<Response>((resolve) => (finish = resolve)),
+    });
+    const user = userEvent.setup();
+    renderApp("/");
+
+    const card = await screen.findByRole("article", { name: "Write the report" });
+    await user.click(within(card).getByRole("button", { name: "Delete" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+
+    await user.click(screen.getByRole("button", { name: "+ New task" }));
+    await user.type(screen.getByLabelText("Title"), "Draft");
+    finish(new Response(null, { status: 204 }));
+
+    expect(await screen.findByText("Task deleted")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "New task" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Title")).toHaveValue("Draft");
+  });
+});
+
+describe("saving", () => {
+  beforeEach(loggedIn);
+
+  it("locks the form while a save is running", async () => {
+    let finish: (r: Response) => void = () => {};
+    fakeApi({
+      ...common,
+      "GET /api/v1/tasks": () => json(page([])),
+      "POST /api/v1/tasks": () => new Promise<Response>((resolve) => (finish = resolve)),
+    });
+    const user = userEvent.setup();
+    renderApp("/");
+
+    await user.click(await screen.findByRole("button", { name: "+ New task" }));
+    await user.type(screen.getByLabelText("Title"), "Initial title");
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    expect(screen.getByLabelText("Title")).toBeDisabled();
+    expect(screen.getByLabelText("Description")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+
+    finish(json(task({ title: "Initial title" }), 201));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+});
