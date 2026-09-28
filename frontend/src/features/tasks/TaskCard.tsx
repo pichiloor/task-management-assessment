@@ -1,4 +1,5 @@
 import type { Task, TaskStatus } from "../../api/endpoints";
+import { CheckIcon, PencilIcon, TrashIcon } from "../../components/icons";
 import {
   STATUSES,
   STATUS_LABELS,
@@ -29,6 +30,7 @@ export function TaskCard({
   onDelete,
 }: Props) {
   const isCreator = task.creator_id === currentUserId;
+  const completed = task.status === "completed";
   const overdue = isOverdue(task);
   const nameOf = (id: number) =>
     id === currentUserId ? "you" : (userNames.get(id) ?? `user #${id}`);
@@ -76,30 +78,42 @@ export function TaskCard({
             ))}
           </select>
         </label>
-        {task.status !== "completed" && (
+        <div className="icon-actions">
+          {/* Toggle: completes the task, or reopens it as pending. */}
           <button
             type="button"
-            className="button"
+            className={`icon-action check${completed ? " done" : ""}`}
+            aria-pressed={completed}
+            aria-label={completed ? "Mark as not completed" : "Mark as completed"}
+            title={completed ? "Mark as not completed" : "Mark as completed"}
             disabled={busy}
-            onClick={() => onStatusChange(task, "completed")}
+            onClick={() => onStatusChange(task, completed ? "pending" : "completed")}
           >
-            Complete
+            <CheckIcon />
           </button>
-        )}
-        {isCreator && (
-          <>
-            <button type="button" className="button" onClick={() => onEdit(task)}>
-              Edit
-            </button>
-            <button
-              type="button"
-              className="button danger-outline"
-              onClick={() => onDelete(task)}
-            >
-              Delete
-            </button>
-          </>
-        )}
+          {isCreator && (
+            <>
+              <button
+                type="button"
+                className="icon-action"
+                aria-label="Edit"
+                title="Edit"
+                onClick={() => onEdit(task)}
+              >
+                <PencilIcon />
+              </button>
+              <button
+                type="button"
+                className="icon-action danger"
+                aria-label="Delete"
+                title="Delete"
+                onClick={() => onDelete(task)}
+              >
+                <TrashIcon />
+              </button>
+            </>
+          )}
+        </div>
       </footer>
     </article>
   );

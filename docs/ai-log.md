@@ -749,3 +749,20 @@
   the sort would need a migration of the exports table).
 - Checked in Chromium at 1280 and 390 px: the order changes, no console
   errors or warnings, no horizontal scroll.
+
+## Task actions as icons (2026-09-28, after step 14)
+
+- Requested by the author: the card's Complete, Edit and Delete buttons as
+  icons (a check that can be set and cleared, a pencil, a trash can).
+  Implemented by Claude (Claude Code, Opus 5.5), reviewed by Codex
+  (`gpt-6-astra`, read-only). Not pushed.
+- The check is now a toggle (`aria-pressed`): it completes the task, and on
+  a completed task it reopens it as `pending` (the API keeps no previous
+  status to return to). Pencil and trash still appear only for the creator.
+  Each icon button has an accessible name and a tooltip; icons are inline
+  SVG, so no icon library was added. The status select stays: it is the
+  only way to set `in_progress`.
+- Tests changed first and seen failing (2 failed: the old "Complete" button
+  and the missing reopen); then the implementation; 30 passed.
+- Checked in Chromium at 1280 px (light and dark) and 390 px: complete and
+  reopen work, no console errors or warnings, no horizontal scroll.

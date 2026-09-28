@@ -27,9 +27,10 @@ the status). Each user sees only tasks they are part of.
    keeps it).
 3. **Export CSV** with the filter on: the job goes to the Celery worker, the
    page polls, **Download**. Open the file.
-4. **New task**, assign it to Bruno, due next week. Edit it. Complete it.
+4. **New task**, assign it to Bruno, due next week. Edit it (pencil).
+   Complete it with the check icon; press it again to reopen it.
 5. Log out, log in as **Bruno**: the task is there, but only the status can
-   change (no Edit/Delete). Show the 403 in Swagger if he tries a PATCH of
+   change (no pencil or trash icons). Show the 403 in Swagger if he tries a PATCH of
    the title.
 6. Delete a task as its creator (confirmation dialog).
 7. Resize to phone width (or DevTools): same features, no horizontal scroll.

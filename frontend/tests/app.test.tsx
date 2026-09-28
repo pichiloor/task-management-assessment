@@ -87,10 +87,10 @@ describe("tasks", () => {
     expect(within(assigned).queryByRole("button", { name: "Edit" })).toBeNull();
     expect(within(assigned).queryByRole("button", { name: "Delete" })).toBeNull();
     expect(within(assigned).getByText(new RegExp(`^${BRUNO.name} · `))).toBeInTheDocument();
-    expect(within(assigned).getByRole("button", { name: "Complete" })).toBeInTheDocument();
+    expect(within(assigned).getByRole("button", { name: "Mark as completed" })).toBeInTheDocument();
   });
 
-  it("completes a task with a PATCH of the status only", async () => {
+  it("the check button completes a task and reopens it", async () => {
     let status: "pending" | "completed" = "pending";
     const { calls } = fakeApi({
       ...common,
@@ -104,13 +104,20 @@ describe("tasks", () => {
     renderApp("/");
 
     const card = await screen.findByRole("article", { name: "Write the report" });
-    await user.click(within(card).getByRole("button", { name: "Complete" }));
+    const check = within(card).getByRole("button", { name: "Mark as completed" });
+    expect(check).toHaveAttribute("aria-pressed", "false");
+    await user.click(check);
 
-    await waitFor(() =>
-      expect(within(card).queryByRole("button", { name: "Complete" })).toBeNull(),
-    );
+    const done = await within(card).findByRole("button", { name: "Mark as not completed" });
+    expect(done).toHaveAttribute("aria-pressed", "true");
     expect(within(card).getByRole("combobox")).toHaveValue("completed");
-    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ status: "completed" });
+    expect(calls.filter((c) => c.method === "PATCH").map((c) => c.body)).toEqual([
+      { status: "completed" },
+    ]);
+
+    await user.click(done);
+    await within(card).findByRole("button", { name: "Mark as completed" });
+    expect(calls.filter((c) => c.method === "PATCH").at(-1)?.body).toEqual({ status: "pending" });
   });
 
   it("creates a task from the dialog", async () => {

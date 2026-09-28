@@ -91,7 +91,9 @@ Stop with `docker compose down` (keeps data) or `docker compose down -v`
 - **Frontend:** login, the task list with filters, sort and paging kept in
   the URL (sort with two toggle buttons: *Due date* and *Created*; pressing
   the active one reverses it),
-  create/edit dialogs, delete with confirmation, the export panel. Works on
+  create/edit dialogs, icon buttons on each task (check to complete or
+  reopen, pencil to edit, trash to delete with confirmation), the export
+  panel. Works on
   phones and desktops, in light and dark mode, and by keyboard.
 
 | Filter and export | New task | Edit on a phone |

@@ -447,7 +447,59 @@ textarea {
 .task-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
+}
+
+.icon-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* Round icon buttons; 2.5rem keeps a comfortable touch target. */
+.icon-action {
+  display: inline-grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.icon-action:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.icon-action.danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.icon-action.check:hover:not(:disabled) {
+  border-color: var(--done-fg);
+  color: var(--done-fg);
+}
+
+.icon-action.check.done {
+  border-color: var(--done-fg);
+  background: var(--done-fg);
+  color: var(--surface);
+}
+
+.icon-action.check.done:hover:not(:disabled) {
+  color: var(--surface);
+  opacity: 0.85;
+}
+
+.icon-action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .pagination {
@@ -527,7 +579,6 @@ textarea {
     grid-column: 1 / -1;
   }
 
-  .task-actions .button,
   .task-actions select {
     flex: 1 1 auto;
   }
