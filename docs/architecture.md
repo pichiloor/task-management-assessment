@@ -143,7 +143,8 @@ src/
     tasks/      TasksPage, TaskCard, TaskFormDialog, FilterBar, SortControl,
                 filter/sort/URL hooks
     exports/    ExportPanel (request, poll, authenticated download)
-  components/   Modal, ConfirmDialog, Field, Pagination
+  components/   Modal, ConfirmDialog, Field, Pagination, icons,
+                toast/ (success notifications, polite live region)
 ```
 
 - Server state lives in TanStack Query; every change invalidates the task

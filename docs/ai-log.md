@@ -766,3 +766,24 @@
   and the missing reopen); then the implementation; 30 passed.
 - Checked in Chromium at 1280 px (light and dark) and 390 px: complete and
   reopen work, no console errors or warnings, no horizontal scroll.
+
+## Success notifications (2026-09-28, after step 14)
+
+- Requested by the author: a green notification at the top confirming that
+  a task was created. Implemented by Claude (Claude Code, Opus 5.5),
+  reviewed by Codex (`gpt-6-astra`, read-only). Not pushed.
+- A small `ToastProvider` instead of a library (Sonner was considered; the
+  project rule is no new libraries without the author's approval, and about
+  60 lines cover it). Top right on desktop, full width on phones; closes
+  after 4 s or with its close button; the region is a polite `role="status"`
+  live region, so screen readers announce it without moving focus; the
+  entry animation is off with `prefers-reduced-motion`.
+- Claude extended it, and said so, to saved changes ("Changes saved") and
+  deletions ("Task deleted") for consistent feedback. Nothing is shown when
+  a save fails (the dialog keeps its error).
+- Tests first: 2 of 3 new tests failed before the implementation (the
+  third, "no notification on failure", guards against a regression and
+  passed from the start); 33 passed after.
+- Checked in Chromium at 1280 px (light and dark) and 390 px: shown after
+  creating, closed after about 4 s, no console errors or warnings; the test
+  tasks were deleted afterwards.

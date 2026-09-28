@@ -385,3 +385,66 @@ describe("sorting", () => {
     expect(taskUrls()[0]).toContain("sort=due_date");
   });
 });
+
+describe("notifications", () => {
+  beforeEach(loggedIn);
+
+  it("confirms a created task with a notification that can be closed", async () => {
+    fakeApi({
+      ...common,
+      "GET /api/v1/tasks": () => json(page([])),
+      "POST /api/v1/tasks": () => json(task({ title: "Buy milk" }), 201),
+    });
+    const user = userEvent.setup();
+    renderApp("/");
+
+    await user.click(await screen.findByRole("button", { name: "+ New task" }));
+    await user.type(screen.getByLabelText("Title"), "Buy milk");
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    const note = await screen.findByText("Task “Buy milk” created");
+    expect(note.closest("[role=status]")).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Dismiss notification" }));
+    await waitFor(() => expect(screen.queryByText("Task “Buy milk” created")).toBeNull());
+  });
+
+  it("confirms saved changes and deletions", async () => {
+    fakeApi({
+      ...common,
+      "GET /api/v1/tasks": () => json(page([task()])),
+      "PATCH /api/v1/tasks/10": () => json(task({ title: "Renamed" })),
+      "DELETE /api/v1/tasks/10": () => new Response(null, { status: 204 }),
+    });
+    const user = userEvent.setup();
+    renderApp("/");
+
+    const card = await screen.findByRole("article", { name: "Write the report" });
+    await user.click(within(card).getByRole("button", { name: "Edit" }));
+    const title = screen.getByLabelText("Title");
+    await user.clear(title);
+    await user.type(title, "Renamed");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText("Changes saved")).toBeInTheDocument();
+
+    await user.click(within(card).getByRole("button", { name: "Delete" }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    expect(await screen.findByText("Task deleted")).toBeInTheDocument();
+  });
+
+  it("does not notify when the save fails", async () => {
+    fakeApi({
+      ...common,
+      "GET /api/v1/tasks": () => json(page([])),
+      "POST /api/v1/tasks": () => json({ detail: "Title is required", code: "title_required" }, 422),
+    });
+    const user = userEvent.setup();
+    renderApp("/");
+
+    await user.click(await screen.findByRole("button", { name: "+ New task" }));
+    await user.type(screen.getByLabelText("Title"), "x");
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    expect(await within(screen.getByRole("dialog")).findByRole("alert")).toHaveTextContent("Title is required");
+    expect(screen.queryByText(/created$/)).toBeNull();
+  });
+});

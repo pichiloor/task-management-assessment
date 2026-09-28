@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Field } from "../../components/Field";
 import type { Task, TaskCreate, TaskStatus, UserPublic } from "../../api/endpoints";
 import { Modal } from "../../components/Modal";
+import { useToast } from "../../components/toast/toast-context";
 import { STATUSES, STATUS_LABELS } from "./task-format";
 import {
   DESCRIPTION_MAX_LENGTH,
@@ -23,6 +24,7 @@ export function TaskFormDialog({ task, users, onClose }: Props) {
   const [values, setValues] = useState<Values>(() => initialValues(task));
   const [error, setError] = useState<string | null>(null);
   const { create, update } = useTaskMutations();
+  const toast = useToast();
   const saving = create.isPending || update.isPending;
   // A save can finish after this dialog was cancelled; closing then would
   // close whichever dialog is open by that time.
@@ -53,6 +55,7 @@ export function TaskFormDialog({ task, users, onClose }: Props) {
         const body = changedFields(task, values);
         if (Object.keys(body).length > 0) {
           await update.mutateAsync({ id: task.id, body });
+          toast.success("Changes saved");
         }
       } else {
         const body: TaskCreate = {
@@ -62,6 +65,7 @@ export function TaskFormDialog({ task, users, onClose }: Props) {
           due_date: values.dueDate || null,
         };
         await create.mutateAsync(body);
+        toast.success(`Task “${title}” created`);
       }
       if (open.current) onClose();
     } catch (err) {

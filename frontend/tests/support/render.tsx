@@ -3,6 +3,7 @@ import { render } from "@testing-library/react";
 import { StrictMode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { App } from "../../src/App";
+import { ToastProvider } from "../../src/components/toast/ToastProvider";
 import { AuthProvider } from "../../src/features/auth/AuthProvider";
 import { createQueryClient } from "../../src/query-client";
 
@@ -16,9 +17,11 @@ export function renderApp(path = "/") {
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <MemoryRouter initialEntries={[path]}>
-          <AuthProvider>
-            <App />
-          </AuthProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </ToastProvider>
         </MemoryRouter>
       </QueryClientProvider>
     </StrictMode>,

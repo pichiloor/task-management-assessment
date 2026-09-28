@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Task, TaskStatus } from "../../api/endpoints";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Pagination } from "../../components/Pagination";
+import { useToast } from "../../components/toast/toast-context";
 import { useApi, useAuth } from "../auth/auth-context";
 import { ExportPanel } from "../exports/ExportPanel";
 import { FilterBar } from "./FilterBar";
@@ -26,6 +27,7 @@ export function TasksPage() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const { update, remove } = useTaskMutations();
+  const toast = useToast();
 
   const invalidRange =
     filters.due_from !== undefined &&
@@ -62,7 +64,12 @@ export function TasksPage() {
   }
 
   function confirmDelete(task: Task) {
-    remove.mutate(task.id, { onSuccess: () => setDialog(null) });
+    remove.mutate(task.id, {
+      onSuccess: () => {
+        setDialog(null);
+        toast.success("Task deleted");
+      },
+    });
   }
 
   if (!user) return null;

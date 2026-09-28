@@ -92,8 +92,9 @@ Stop with `docker compose down` (keeps data) or `docker compose down -v`
   the URL (sort with two toggle buttons: *Due date* and *Created*; pressing
   the active one reverses it),
   create/edit dialogs, icon buttons on each task (check to complete or
-  reopen, pencil to edit, trash to delete with confirmation), the export
-  panel. Works on
+  reopen, pencil to edit, trash to delete with confirmation), green
+  notifications confirming a task was created, changed or deleted, the
+  export panel. Works on
   phones and desktops, in light and dark mode, and by keyboard.
 
 | Filter and export | New task | Edit on a phone |
