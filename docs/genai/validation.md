@@ -62,8 +62,10 @@ What was designed and tested explicitly, beyond the happy path:
   download (file closed), concurrent seed runs (advisory lock), a recreated
   API container (nginx re-resolves it).
 - **Frontend.** Rejected token → login; a late 401 from an old session is
-  ignored; a save finishing after its dialog closed is ignored; a failed
-  status poll does not stop the export; focus stays inside dialogs.
+  ignored; a save finishing after its dialog was closed does not close the
+  dialog opened next (its success notification still shows, since the task
+  was saved); a failed status poll does not stop the export; focus stays
+  inside dialogs.
 
 ## Performance
 

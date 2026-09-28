@@ -318,7 +318,7 @@ backend/
 frontend/
   src/api/             fetch client, endpoints, generated OpenAPI types
   src/features/        auth, tasks, exports
-  src/components/      Modal, ConfirmDialog, Field, Pagination
+  src/components/      Modal, ConfirmDialog, Field, Pagination, icons, toast
   tests/               Vitest + Testing Library
   nginx.conf           static files and the /api proxy
 docs/                  architecture, decisions, thought process, presentation, GenAI evidence
