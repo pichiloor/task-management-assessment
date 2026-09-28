@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createApi, login as requestToken, type Api } from "../../api/endpoints";
 import { ApiError } from "../../api/http";
 import { AuthContext, type AuthState } from "./auth-context";
@@ -9,15 +9,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [token, setToken] = useState<string | null>(readToken);
 
-  const logout = useCallback(() => {
-    writeToken(null);
-    setToken(null);
-    queryClient.clear();
-  }, [queryClient]);
+  // The token state is the source of truth; storage and cache follow it.
+  useEffect(() => {
+    writeToken(token);
+    if (!token) queryClient.clear();
+  }, [token, queryClient]);
+
+  const logout = useCallback(() => setToken(null), []);
+
+  // Only a 401 for the session still in use logs out: a late answer to a
+  // request made with an earlier token must not end a newer session.
+  const logoutIfCurrent = useCallback(
+    (expected: string) =>
+      setToken((current) => (current === expected ? null : current)),
+    [],
+  );
 
   const api = useMemo(
-    () => (token ? logoutOnUnauthorized(createApi(token), logout) : null),
-    [token, logout],
+    () =>
+      token
+        ? logoutOnUnauthorized(createApi(token), () => logoutIfCurrent(token))
+        : null,
+    [token, logoutIfCurrent],
   );
 
   const me = useQuery({
@@ -28,9 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const login = useCallback(async (email: string, password: string) => {
-    const newToken = await requestToken(email, password);
-    writeToken(newToken);
-    setToken(newToken);
+    setToken(await requestToken(email, password));
   }, []);
 
   const value = useMemo<AuthState>(

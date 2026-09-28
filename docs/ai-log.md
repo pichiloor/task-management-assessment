@@ -639,3 +639,14 @@
   (the accepted job now seeds the query); the modal did not keep Tab focus
   inside, so keyboard users could reach and trigger background buttons
   (focus now wraps). Both frontend fixes have a test that failed before.
+- Second review confirmed the three fixes (a variable `proxy_pass` without
+  a URI still passes `/api` and the query string) and found two medium
+  races, both accepted with a test that failed first: a save finishing
+  after its dialog was cancelled closed the next dialog and lost its draft
+  (the result is now ignored once the dialog is gone); a late 401 for a
+  request made before logging out and back in ended the new session (a
+  401 now logs out only if its token is still the current one). Claude's
+  first fix used a ref read in a callback built during render, which the
+  React hooks lint rule rejects; the token now lives only in state, the
+  conditional logout is a functional update, and storage and cache follow
+  the state in an effect.

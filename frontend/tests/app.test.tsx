@@ -271,3 +271,57 @@ describe("modal", () => {
     }
   });
 });
+
+describe("late responses", () => {
+  it("a save finishing after its dialog was cancelled does not close a new one", async () => {
+    loggedIn();
+    let finish: (r: Response) => void = () => {};
+    fakeApi({
+      ...common,
+      "GET /api/v1/tasks": () => json(page([])),
+      "POST /api/v1/tasks": () => new Promise<Response>((resolve) => (finish = resolve)),
+    });
+    const user = userEvent.setup();
+    renderApp("/");
+
+    await user.click(await screen.findByRole("button", { name: "+ New task" }));
+    await user.type(screen.getByLabelText("Title"), "Slow one");
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await user.click(screen.getByRole("button", { name: "+ New task" }));
+    await user.type(screen.getByLabelText("Title"), "Draft");
+    finish(json(task({ title: "Slow one" }), 201));
+
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThan(3));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByLabelText("Title")).toHaveValue("Draft");
+  });
+
+  it("a 401 for an old session does not log out the new one", async () => {
+    sessionStorage.setItem(TOKEN_KEY, "token-old");
+    let rejectOld: (r: Response) => void = () => {};
+    fakeApi({
+      ...common,
+      "POST /api/v1/auth/token": () => json({ access_token: "token-new", token_type: "bearer" }),
+      "GET /api/v1/tasks": ({ headers }) =>
+        headers.get("Authorization") === "Bearer token-old"
+          ? new Promise<Response>((resolve) => (rejectOld = resolve))
+          : json(page([task()])),
+    });
+    const user = userEvent.setup();
+    renderApp("/");
+
+    await user.click(await screen.findByRole("button", { name: "Log out" }));
+    await user.type(await screen.findByLabelText("Email"), "ana@example.com");
+    await user.type(screen.getByLabelText("Password"), "demo-password-2026"); // pragma: allowlist secret
+    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await screen.findByRole("article", { name: "Write the report" });
+
+    rejectOld(json({ detail: "Invalid or expired token", code: "invalid_token" }, 401));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByRole("article", { name: "Write the report" })).toBeInTheDocument();
+    expect(sessionStorage.getItem(TOKEN_KEY)).toBe("token-new");
+  });
+});

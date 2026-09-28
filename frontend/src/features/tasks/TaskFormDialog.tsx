@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Field } from "../../components/Field";
 import type { Task, TaskCreate, TaskStatus, UserPublic } from "../../api/endpoints";
 import { Modal } from "../../components/Modal";
@@ -24,6 +24,10 @@ export function TaskFormDialog({ task, users, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const { create, update } = useTaskMutations();
   const saving = create.isPending || update.isPending;
+  // A save can finish after this dialog was cancelled; closing then would
+  // close whichever dialog is open by that time.
+  const open = useRef(true);
+  useEffect(() => () => void (open.current = false), []);
   const editing = task !== undefined;
 
   function set<K extends keyof Values>(key: K, value: Values[K]) {
@@ -53,8 +57,9 @@ export function TaskFormDialog({ task, users, onClose }: Props) {
         };
         await create.mutateAsync(body);
       }
-      onClose();
+      if (open.current) onClose();
     } catch (err) {
+      if (!open.current) return;
       setError(err instanceof Error ? err.message : "Could not save the task.");
     }
   }
