@@ -6,7 +6,7 @@ from sqlalchemy import Connection, event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.application.ports import TaskQuery
+from app.application.ports import TaskQuery, TaskSort
 from app.application.tasks import NewTask, TaskChanges, TaskService
 from app.domain.errors import ValidationError
 from app.domain.export import Export, ExportStatus
@@ -243,6 +243,33 @@ class TestOrderingAndPagination:
         items, _ = tasks.list(query(me))
 
         assert [t.id for t in items] == [early, tie_a, tie_b, late, no_date]
+
+    def test_due_date_descending_keeps_tasks_without_date_last(
+        self, tasks: SqlTaskRepository, me: int
+    ) -> None:
+        no_date = tasks.add(new_task(me)).id
+        early = tasks.add(new_task(me, due_date=date(2026, 9, 1))).id
+        tie_a = tasks.add(new_task(me, due_date=date(2026, 10, 1))).id
+        tie_b = tasks.add(new_task(me, due_date=date(2026, 10, 1))).id
+        late = tasks.add(new_task(me, due_date=date(2026, 12, 1))).id
+
+        items, _ = tasks.list(query(me, sort=TaskSort.DUE_DATE_DESC))
+
+        assert [t.id for t in items] == [late, tie_b, tie_a, early, no_date]
+
+    def test_created_at_in_both_directions_with_id_as_tiebreak(
+        self, tasks: SqlTaskRepository, me: int
+    ) -> None:
+        middle = tasks.add(new_task(me, now=NOW)).id
+        oldest = tasks.add(new_task(me, now=NOW - timedelta(days=2))).id
+        newest = tasks.add(new_task(me, now=NOW + timedelta(days=1))).id
+        tie = tasks.add(new_task(me, now=NOW)).id
+
+        oldest_first, _ = tasks.list(query(me, sort=TaskSort.CREATED_AT))
+        newest_first, _ = tasks.list(query(me, sort=TaskSort.CREATED_AT_DESC))
+
+        assert [t.id for t in oldest_first] == [oldest, middle, tie, newest]
+        assert [t.id for t in newest_first] == [newest, tie, middle, oldest]
 
     def test_pages_are_disjoint_and_total_is_global(
         self, tasks: SqlTaskRepository, me: int

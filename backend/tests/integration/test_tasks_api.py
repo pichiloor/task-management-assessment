@@ -215,6 +215,48 @@ class TestList:
         assert client.get(f"/api/v1/tasks?{query}", headers=ana[1]).status_code == 422
 
 
+class TestSort:
+    def test_sort_parameter_orders_the_list(
+        self, client: TestClient, ana: tuple[int, Headers]
+    ) -> None:
+        _, headers = ana
+        first = create(client, headers, due_date="2026-12-01")["id"]
+        second = create(client, headers)["id"]
+        third = create(client, headers, due_date="2026-09-01")["id"]
+
+        def ids(sort: str | None) -> list[int]:
+            params = {"sort": sort} if sort else {}
+            response = client.get("/api/v1/tasks", params=params, headers=headers)
+            assert response.status_code == 200, response.text
+            return [t["id"] for t in response.json()["items"]]
+
+        assert ids(None) == [third, first, second]
+        assert ids("due_date") == [third, first, second]
+        assert ids("-due_date") == [first, third, second]
+        assert ids("created_at") == [first, second, third]
+        assert ids("-created_at") == [third, second, first]
+
+    def test_unknown_sort_is_422(
+        self, client: TestClient, ana: tuple[int, Headers]
+    ) -> None:
+        response = client.get("/api/v1/tasks", params={"sort": "title"}, headers=ana[1])
+        assert response.status_code == 422
+
+    def test_openapi_lists_the_sort_values(self, client: TestClient) -> None:
+        params = client.get("/api/openapi.json").json()["paths"]["/api/v1/tasks"][
+            "get"
+        ]["parameters"]
+        sort = next(p for p in params if p["name"] == "sort")
+        schema = sort["schema"]
+        enum = (
+            schema.get("enum")
+            or client.get("/api/openapi.json").json()["components"]["schemas"][
+                schema["$ref"].rsplit("/", 1)[1]
+            ]["enum"]
+        )
+        assert set(enum) == {"due_date", "-due_date", "created_at", "-created_at"}
+
+
 class TestPatch:
     def test_omitted_fields_stay_and_null_clears(
         self, client: TestClient, ana: tuple[int, Headers], bo: tuple[int, Headers]

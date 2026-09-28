@@ -2,6 +2,7 @@ from datetime import date
 
 import pytest
 
+from app.application.ports import TaskSort
 from app.application.tasks import (
     MAX_PAGE_SIZE,
     NewTask,
@@ -158,3 +159,26 @@ class TestPagination:
     def test_max_page_size_is_accepted(self, service: TaskService) -> None:
         page = service.list(ME, TaskListFilters(page_size=MAX_PAGE_SIZE))
         assert page.page_size == MAX_PAGE_SIZE
+
+
+class TestSorting:
+    def test_default_is_due_date_ascending(self, service: TaskService) -> None:
+        late = add(service, due=date(2026, 12, 1))
+        early = add(service, due=date(2026, 9, 1))
+
+        page = service.list(ME, TaskListFilters())
+
+        assert [t.id for t in page.items] == [early, late]
+
+    def test_the_requested_sort_reaches_the_repository(
+        self, service: TaskService
+    ) -> None:
+        early = add(service, due=date(2026, 9, 1))
+        no_date = add(service)
+        late = add(service, due=date(2026, 12, 1))
+
+        by_due_desc = service.list(ME, TaskListFilters(sort=TaskSort.DUE_DATE_DESC))
+        newest_first = service.list(ME, TaskListFilters(sort=TaskSort.CREATED_AT_DESC))
+
+        assert [t.id for t in by_due_desc.items] == [late, early, no_date]
+        assert [t.id for t in newest_first.items] == [late, no_date, early]
