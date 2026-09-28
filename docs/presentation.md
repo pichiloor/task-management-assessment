@@ -61,8 +61,8 @@ the status). Each user sees only tasks they are part of.
 
 ## 4. Testing (3 min)
 
-- 393 backend tests, 98.5% coverage, run against real PostgreSQL and Redis;
-  27 frontend tests. CI: four jobs, all green.
+- 400 backend tests, 98.5% coverage, run against real PostgreSQL and Redis;
+  33 frontend tests. CI: four jobs, all green.
 - TDD: show a red/green pair in the history, for example
   `git show 204ef03 9ec17fc --stat` (task entity).
 - Show one integration test and one frontend flow test

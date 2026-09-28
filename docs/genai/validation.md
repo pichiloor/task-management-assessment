@@ -108,8 +108,8 @@ queries use batches of 1000 IDs to stay under the PostgreSQL protocol's
 
 | Check | Result |
 | --- | --- |
-| Backend suite in Docker (`pytest --cov=app -W error::DeprecationWarning`) | 393 passed, 98.51% line and branch coverage |
-| Frontend (`vitest run`) | 27 passed |
+| Backend suite in Docker (`pytest --cov=app -W error::DeprecationWarning`) | 400 passed, 98.52% line and branch coverage |
+| Frontend (`vitest run`) | 33 passed |
 | `tsc --noEmit`, ESLint | Clean |
 | pre-commit, all hooks | Passed |
 | Full stack through nginx | Login, CRUD, filters, export and download, health, Swagger, security headers |

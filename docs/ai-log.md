@@ -787,3 +787,8 @@
 - Checked in Chromium at 1280 px (light and dark) and 390 px: shown after
   creating, closed after about 4 s, no console errors or warnings; the test
   tasks were deleted afterwards.
+- README refresh after these changes: test counts taken from the CI log of
+  `b4078d0` (backend 400 passed, 98.52%; frontend 33 passed) in the README,
+  `presentation.md` and `genai/validation.md`; screenshots retaken from a
+  throwaway Compose project with only the demo data, so they show the sort
+  buttons, the icon actions and the creation date.
