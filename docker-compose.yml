@@ -1,5 +1,5 @@
-# Pending: nginx.
-# PostgreSQL and Redis are internal only: no host ports are published.
+# Only nginx (the web service) publishes a host port; PostgreSQL, Redis and
+# the API are reachable only inside the compose networks.
 name: task-management
 
 x-database-env: &database-env
@@ -76,8 +76,8 @@ services:
       RATE_LIMIT_API: ${RATE_LIMIT_API:-120/minute}
       RATE_LIMIT_EXPORTS: ${RATE_LIMIT_EXPORTS:-5/minute}
       RATE_LIMIT_KEY_PREFIX: ${RATE_LIMIT_KEY_PREFIX:-task-management}
-      # Set to nginx's address when it is added in front of the API.
-      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1}
+      # Only nginx (fixed address on the edge network) may set X-Forwarded-For.
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-172.31.240.10}
     command:
       # X-Forwarded-For is handled inside the app (RATE_LIMIT_TRUSTED_PROXIES),
       # so uvicorn's own proxy-header handling is turned off.
@@ -91,6 +91,9 @@ services:
       - --no-proxy-headers
     volumes:
       - exports:/data/exports
+    networks:
+      - default
+      - edge
     healthcheck:
       test:
         - CMD
@@ -107,6 +110,27 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+
+  # The only service with a host port: serves the React build and proxies
+  # /api to the API. Open http://localhost:8080 (WEB_PORT to change it).
+  web:
+    build:
+      context: ./frontend
+      target: runtime
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    networks:
+      edge:
+        ipv4_address: 172.31.240.10
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      api:
         condition: service_healthy
 
   # Celery worker for CSV exports. Reads jobs from Redis, tasks from
@@ -184,6 +208,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+networks:
+  default:
+  # nginx and the API only; fixed range so the API can trust nginx's address.
+  edge:
+    ipam:
+      config:
+        - subnet: 172.31.240.0/28
 
 volumes:
   db-data:

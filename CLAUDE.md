@@ -6,8 +6,18 @@ Steps 1 (tooling), 2 (PostgreSQL and Redis in Compose), 3 (domain rules and
 use cases, TDD), 4 (SQLAlchemy repositories, Alembic) and 5 (JWT login,
 Argon2, auth endpoints) and 6 (task CRUD endpoints, `/api/health`, `api`
 Compose service), 7 (demo seed), 8 (rate limiting) and 9 (Celery worker and
-CSV export) and 10 (CI on GitHub Actions) are done. Next: React frontend
-behind nginx.
+CSV export), 10 (CI on GitHub Actions) and 11 (React frontend behind nginx)
+are done. Next: documentation, clean-clone check and submission.
+
+Frontend (`frontend/`): Vite + React + TypeScript strict, TanStack Query,
+React Router. Types come from the OpenAPI document: after changing an
+endpoint or schema run `./scripts/gen-api-types.sh` and commit
+`frontend/openapi.json` and `src/api/generated/`. Tests: `npm --prefix
+frontend test` (Vitest + Testing Library, `fetch` faked in
+`tests/support/fake-api.ts`). nginx (`frontend/nginx.conf`) serves the build
+and proxies `/api` unchanged; it is the only service with a host port
+(`WEB_PORT`, default 8080) and has a fixed address on the `edge` network,
+which is what `RATE_LIMIT_TRUSTED_PROXIES` trusts.
 
 CSV export (`app/application/exports.py`, `app/infrastructure/worker.py`,
 `worker_main.py`, `export_files.py`, `app/api/routes/exports.py`):
@@ -90,8 +100,8 @@ npm --prefix frontend run lint
 
 Commit both lockfiles. Ruff handles lint and formatting; mypy is strict.
 import-linter checks the architecture; ESLint checks frontend code and config.
-Secret detection and basic file hygiene must pass. TypeScript is strict;
-its compiler check will be connected when source files exist.
+Secret detection and basic file hygiene must pass. TypeScript is strict
+(`npm --prefix frontend run typecheck`).
 
 ## Later implementation and tests
 
@@ -114,14 +124,14 @@ by hand under `backend/migrations/versions/`, wrapping full constraint names in
 server defaults with the models; Alembic does not compare CHECK constraints,
 so `test_schema_constraints.py` checks their names and behavior.
 CI (`.github/workflows/ci.yml`, on push to `main`, pull requests and manual
-runs) has three jobs: `quality` runs `pre-commit run --all-files` (so CI and
+runs) has four jobs: `quality` runs `pre-commit run --all-files` (so CI and
 local hooks are the same checks); `backend-tests` runs the full suite on the
 runner with PostgreSQL and Redis as `services` (same image versions as
 Compose, `TEST_POSTGRES_DB` set so integration tests run, coverage under 80%
 fails); `docker-build` builds the `runtime` and `test` images. Actions are
-pinned by commit SHA and checkout does not keep the token. When the frontend
-gets source files, add `tsc`, the production build and the OpenAPI types
-drift check to CI.
+pinned by commit SHA and checkout does not keep the token. `frontend` regenerates the API types and fails on
+a diff, then runs `tsc`, Vitest and the production build; `docker-build`
+also builds the frontend image.
 
 Do not claim tests passed, coverage, performance or platform compatibility
 without executing the corresponding checks and recording real results.
@@ -136,11 +146,11 @@ use `sg docker -c "docker ..."` if needed, never Docker Desktop.
 Compose runs `db` (PostgreSQL 16.15) and `redis` (Redis 7.4.11) with
 healthchecks and a named volume for data, plus `migrate` (one-shot Alembic
 and demo seed),
-`api` (uvicorn factory on port 8000, not published yet; healthcheck on
-`/api/health`), `worker` (Celery, queues `maintenance,celery`), `beat`
+`api` (uvicorn factory on port 8000, reachable only through nginx;
+healthcheck on `/api/health`), `web` (nginx, port 8080), `worker` (Celery, queues `maintenance,celery`), `beat`
 (exactly one) and `backend-tests` (profile `test`). The backend Dockerfile has `runtime` and
-`test` targets and runs as a non-root user. The frontend Dockerfile and nginx
-are still placeholders.
+`test` targets and runs as a non-root user. The frontend Dockerfile builds with Node
+24.14.1 and serves with nginx 1.30.1.
 
 ```sh
 ./scripts/setup-env.sh              # once: creates .env with random secrets

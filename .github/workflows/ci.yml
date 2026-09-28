@@ -122,10 +122,55 @@ jobs:
           -W error::DeprecationWarning
           --cov=app --cov-report=term-missing --cov-fail-under=80
 
+  # TypeScript types, tests and the production bundle. The types are
+  # generated from the backend's OpenAPI document: regenerating them here
+  # and diffing catches an API change the frontend was not updated for.
+  frontend:
+    name: Frontend types, tests and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          working-directory: backend
+          enable-cache: true
+          # Relative to working-directory.
+          cache-dependency-glob: uv.lock
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          uv sync --project backend --locked
+          npm ci --prefix frontend
+
+      - name: Check the API types match the backend
+        run: |
+          ./scripts/gen-api-types.sh
+          git diff --exit-code -- frontend/openapi.json frontend/src/api/generated
+
+      - name: Type check
+        run: npm --prefix frontend run typecheck
+
+      - name: Tests
+        run: npm --prefix frontend test
+
+      - name: Production build
+        run: npm --prefix frontend run build
+
   # The images Compose builds: catches a broken Dockerfile before a reviewer
   # runs `docker compose up`.
   docker-build:
-    name: Backend Docker images
+    name: Docker images
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -138,3 +183,6 @@ jobs:
 
       - name: Build test image
         run: docker build --target test --tag task-management-backend-tests:ci backend
+
+      - name: Build frontend image
+        run: docker build --target runtime --tag task-management-frontend:ci frontend

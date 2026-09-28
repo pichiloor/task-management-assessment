@@ -588,3 +588,45 @@
 - Second review: Claude's new wording ("each test removes its own keys")
   still overstated it; rate-limit tests delete their keys, but worker tests
   only use unique queue names and leave broker keys behind. Reworded.
+
+## Step 11: React frontend behind nginx (2026-09-28)
+
+- Implemented by Claude (Claude Code, Opus 5.5) at the author's request
+  ("continua del 11 al 16"); reviewed by Codex (`gpt-6-astra`, read-only).
+- Contract first: `backend/scripts/export_openapi.py` writes the OpenAPI
+  document (building the app needs settings but opens no connection, so it
+  uses placeholders); `openapi-typescript` turns it into
+  `src/api/generated/schema.ts`. Every request and response type in the
+  client (`src/api/endpoints.ts`) comes from there. `scripts/gen-api-types.sh`
+  regenerates both; CI regenerates and diffs them.
+- App: React Router (login, task list, redirect back after login), TanStack
+  Query (lists invalidated after each change), token in `sessionStorage`,
+  any 401 logs out. Filters and page live in the URL. The card hides what
+  the backend would refuse (edit/delete only for the creator), but the
+  backend still decides. Only changed fields are sent in a PATCH. Delete
+  asks for confirmation. CSV export polls the job and downloads with the
+  bearer token (fetch → Blob → object URL), since a plain link cannot send
+  the header.
+- nginx serves the bundle and proxies `/api` with the prefix kept; it
+  replaces X-Forwarded-For with the peer address, and the API trusts that
+  header only from nginx's fixed address on a dedicated `edge` network.
+  Only nginx publishes a host port (8080). CSP and other security headers
+  on the frontend routes, not on `/api` (Swagger UI loads from a CDN).
+- Tests (Vitest, React Testing Library, jsdom; added to the approved stack
+  in the plan): 23 tests, `fetch` replaced by a router that records calls,
+  so they assert what the UI sent: login, wrong password, rejected token,
+  permissions per card, complete, create with validation, delete with
+  cancel/confirm, filters from the URL, inverted date range not queried,
+  export polling and authenticated download.
+- Found while checking in a real browser (Chromium via Playwright, desktop
+  1280 px and phone 390 px): a `<label>` wrapping a `<select>` made the
+  field's accessible name include its options ("Status All…"), which jsdom
+  did not reveal; fields now use `htmlFor`/`id`. An export finished for
+  earlier filters stayed on screen after changing them; the panel now
+  resets when the filters change.
+- Results: `tsc` clean, ESLint clean, 23/23 Vitest tests; stack rebuilt and
+  checked through nginx: SPA routes, security headers, health, Swagger,
+  login, create/complete/delete, export and CSV download; rate limit keyed
+  by the real client address and unaffected by a forged X-Forwarded-For;
+  in the browser: no console errors and no horizontal scroll on either
+  width.
