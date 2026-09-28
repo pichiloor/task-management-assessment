@@ -721,3 +721,31 @@
 - Found for the presentation: the login limit counts successful logins
   too, so switching users during a live demo uses it up; the presentation
   guide now shows the 429 last.
+
+## Sorting by due date or creation date (2026-09-28, after step 14)
+
+- Requested by the author during the code walkthrough ("dos opciones o
+  botones ... ordenar por fecha de creacion y por fecha de vencimiento");
+  implemented by Claude (Claude Code, Opus 5.5), reviewed by Codex
+  (`gpt-6-astra`, read-only). Not pushed.
+- Sorting is done by the API, not the browser: with pagination, sorting in
+  the browser would only reorder the page on screen.
+- Backend, test first (`4e56ebf`, red: `TaskSort` did not exist) then
+  `f7d4c89`: `sort` query parameter with `due_date` (default, unchanged
+  behavior), `-due_date`, `created_at`, `-created_at`; tasks without a due
+  date stay last in both directions; ties broken by ID in the same
+  direction so pages stay stable. 7 new tests (repository on PostgreSQL,
+  use case, API including 422 for an unknown value and the OpenAPI enum).
+  `backend-tests` → 400 passed, 98.52%.
+- Frontend: `SortControl`, two toggle buttons in a segmented group next to
+  the export button; each starts in its natural direction (due date
+  earliest first, created newest first) and pressing the active one
+  reverses it; `aria-pressed` and a hidden direction text for screen
+  readers. The sort is kept in the URL, survives filter changes and resets
+  the page to 1. The card now shows the creation date next to "Created by",
+  so the created order is visible. 3 new tests; the one that keeps the sort
+  when a filter changes was checked to fail without that line. 30 passed.
+- Not included on purpose: the CSV export keeps its due-date order (storing
+  the sort would need a migration of the exports table).
+- Checked in Chromium at 1280 and 390 px: the order changes, no console
+  errors or warnings, no horizontal scroll.

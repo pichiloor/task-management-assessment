@@ -86,7 +86,7 @@ describe("tasks", () => {
     expect(within(mine).getByRole("button", { name: "Edit" })).toBeInTheDocument();
     expect(within(assigned).queryByRole("button", { name: "Edit" })).toBeNull();
     expect(within(assigned).queryByRole("button", { name: "Delete" })).toBeNull();
-    expect(within(assigned).getByText(BRUNO.name)).toBeInTheDocument();
+    expect(within(assigned).getByText(new RegExp(`^${BRUNO.name} · `))).toBeInTheDocument();
     expect(within(assigned).getByRole("button", { name: "Complete" })).toBeInTheDocument();
   });
 
@@ -173,13 +173,13 @@ describe("tasks", () => {
     const first = calls.find((c) => c.path === "/api/v1/tasks");
     expect(first).toBeDefined();
     const url = vi.mocked(fetch).mock.calls.map(([input]) => String(input)).find((u) => u.startsWith("/api/v1/tasks"));
-    expect(url).toBe("/api/v1/tasks?status=in_progress&due_from=2026-09-01&page=2&page_size=10");
+    expect(url).toBe("/api/v1/tasks?status=in_progress&due_from=2026-09-01&sort=due_date&page=2&page_size=10");
 
     await user.selectOptions(screen.getByLabelText("Status"), "completed");
     await waitFor(() =>
       expect(
         vi.mocked(fetch).mock.calls.map(([input]) => String(input)),
-      ).toContain("/api/v1/tasks?status=completed&due_from=2026-09-01&page=1&page_size=10"),
+      ).toContain("/api/v1/tasks?status=completed&due_from=2026-09-01&sort=due_date&page=1&page_size=10"),
     );
   });
 
@@ -323,5 +323,58 @@ describe("late responses", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.getByRole("article", { name: "Write the report" })).toBeInTheDocument();
     expect(sessionStorage.getItem(TOKEN_KEY)).toBe("token-new");
+  });
+});
+
+describe("sorting", () => {
+  beforeEach(loggedIn);
+
+  const taskUrls = () =>
+    vi
+      .mocked(fetch)
+      .mock.calls.map(([input]) => String(input))
+      .filter((u) => u.startsWith("/api/v1/tasks?"));
+
+  it("sorts by due date by default and toggles each option's direction", async () => {
+    fakeApi({ ...common, "GET /api/v1/tasks": () => json(page([task()], { total: 25, pages: 3 })) });
+    const user = userEvent.setup();
+    renderApp("/?page=2");
+
+    const due = await screen.findByRole("button", { name: "Due date, earliest first" });
+    expect(due).toHaveAttribute("aria-pressed", "true");
+    expect(taskUrls()[0]).toContain("sort=due_date");
+
+    await user.click(screen.getByRole("button", { name: "Created" }));
+    await waitFor(() => expect(taskUrls().at(-1)).toContain("sort=-created_at&page=1"));
+    expect(screen.getByRole("button", { name: "Created, newest first" })).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "Created, newest first" }));
+    await waitFor(() => expect(taskUrls().at(-1)).toContain("sort=created_at&"));
+
+    await user.click(screen.getByRole("button", { name: "Due date" }));
+    await waitFor(() => expect(taskUrls().at(-1)).toContain("sort=due_date&"));
+    await user.click(screen.getByRole("button", { name: "Due date, earliest first" }));
+    await waitFor(() => expect(taskUrls().at(-1)).toContain("sort=-due_date&"));
+  });
+
+  it("keeps the order when a filter changes", async () => {
+    fakeApi({ ...common, "GET /api/v1/tasks": () => json(page([task()])) });
+    const user = userEvent.setup();
+    renderApp("/?sort=-created_at");
+
+    await screen.findByRole("button", { name: "Created, newest first" });
+    await user.selectOptions(screen.getByLabelText("Status"), "pending");
+
+    await waitFor(() =>
+      expect(taskUrls().at(-1)).toBe("/api/v1/tasks?status=pending&sort=-created_at&page=1&page_size=10"),
+    );
+  });
+
+  it("ignores an unknown sort in the URL", async () => {
+    fakeApi({ ...common, "GET /api/v1/tasks": () => json(page([task()])) });
+    renderApp("/?sort=title");
+
+    await screen.findByRole("article", { name: "Write the report" });
+    expect(taskUrls()[0]).toContain("sort=due_date");
   });
 });

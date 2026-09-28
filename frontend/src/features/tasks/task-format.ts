@@ -30,6 +30,15 @@ export function formatDate(iso: string): string {
   });
 }
 
+/** Timestamps (created_at, ...) are instants: shown in the user's zone. */
+export function formatInstant(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export function isOverdue(task: Task, today: string = todayIso()): boolean {
   return (
     task.status !== "completed" && task.due_date !== null && task.due_date < today

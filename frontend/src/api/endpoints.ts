@@ -9,6 +9,7 @@ export type TaskPage = Schemas["TaskPage"];
 export type TaskCreate = Schemas["TaskCreate"];
 export type TaskUpdate = Schemas["TaskUpdate"];
 export type TaskStatus = Task["status"];
+export type TaskSort = Schemas["TaskSort"];
 export type UserPublic = Schemas["UserPublic"];
 export type UserProfile = Schemas["UserProfile"];
 export type ExportJob = Schemas["ExportOut"];

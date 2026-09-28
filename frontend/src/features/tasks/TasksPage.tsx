@@ -6,6 +6,7 @@ import { Pagination } from "../../components/Pagination";
 import { useApi, useAuth } from "../auth/auth-context";
 import { ExportPanel } from "../exports/ExportPanel";
 import { FilterBar } from "./FilterBar";
+import { SortControl } from "./SortControl";
 import { TaskCard } from "./TaskCard";
 import { TaskFormDialog } from "./TaskFormDialog";
 import { useTaskFilters } from "./use-task-filters";
@@ -20,7 +21,8 @@ type Dialog =
 export function TasksPage() {
   const api = useApi();
   const { user, logout } = useAuth();
-  const { filters, page, query, setFilters, setPage } = useTaskFilters();
+  const { filters, sort, page, query, setFilters, setSort, setPage } =
+    useTaskFilters();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const { update, remove } = useTaskMutations();
@@ -93,13 +95,16 @@ export function TasksPage() {
         <p className="muted">Tasks you created or that are assigned to you.</p>
 
         <FilterBar filters={filters} onChange={setFilters} />
-        {/* Keyed by the filters: a finished export for other filters is not
-            offered as if it matched the list on screen. */}
-        <ExportPanel
-          key={JSON.stringify(filters)}
-          filters={filters}
-          disabled={invalidRange}
-        />
+        <div className="list-controls">
+          {/* Keyed by the filters: a finished export for other filters is not
+              offered as if it matched the list on screen. */}
+          <ExportPanel
+            key={JSON.stringify(filters)}
+            filters={filters}
+            disabled={invalidRange}
+          />
+          <SortControl sort={sort} onChange={setSort} />
+        </div>
 
         {actionError && (
           <p className="error" role="alert">

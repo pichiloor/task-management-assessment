@@ -76,15 +76,21 @@ Stop with `docker compose down` (keeps data) or `docker compose down -v`
   The creator edits every field and deletes; the assignee may only change the
   status. Tasks that are not visible return 404, not 403, so their existence
   is not revealed.
-- **Listing:** filter by status, exact due date or due-date range; ordered by
-  due date (tasks without one last), then ID; paginated (`page`, `page_size`
-  up to 100) with `total` and `pages`.
+- **Listing:** filter by status, exact due date or due-date range; sort by
+  due date or creation date, in either direction (`sort=due_date`,
+  `-due_date`, `created_at`, `-created_at`; tasks without a due date always
+  last, ties broken by ID); paginated (`page`, `page_size` up to 100) with
+  `total` and `pages`.
 - **CSV export in the background:** the API records an export and queues it;
   a Celery worker writes the file; the browser polls the job and downloads the
-  CSV. Only the requester can see or download it; files expire after 24 h.
+  CSV. It uses the list's filters and is always ordered by due date (the sort
+  chosen on screen is not stored with the export). Only the requester can
+  see or download it; files expire after 24 h.
 - **Rate limiting:** login 5/minute per client IP, the API 120/minute per
   user, exports 5/minute per user; `429` with `Retry-After`.
-- **Frontend:** login, the task list with filters and paging kept in the URL,
+- **Frontend:** login, the task list with filters, sort and paging kept in
+  the URL (sort with two toggle buttons: *Due date* and *Created*; pressing
+  the active one reverses it),
   create/edit dialogs, delete with confirmation, the export panel. Works on
   phones and desktops, in light and dark mode, and by keyboard.
 
@@ -150,7 +156,7 @@ both.
 | `POST /api/v1/auth/token` | Log in (OAuth2 password form: `username` = email), returns a JWT |
 | `GET /api/v1/users/me` | Current user |
 | `GET /api/v1/users` | Users a task can be assigned to (`id`, `name` only) |
-| `GET /api/v1/tasks` | List: `status`, `due_date` or `due_from`/`due_to`, `page`, `page_size` |
+| `GET /api/v1/tasks` | List: `status`, `due_date` or `due_from`/`due_to`, `sort`, `page`, `page_size` |
 | `POST /api/v1/tasks` | Create (201 + `Location`) |
 | `GET /api/v1/tasks/{id}` | Read |
 | `PATCH /api/v1/tasks/{id}` | Change only the fields sent; `assignee_id` and `due_date` accept `null` to clear |

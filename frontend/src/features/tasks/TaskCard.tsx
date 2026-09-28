@@ -3,6 +3,7 @@ import {
   STATUSES,
   STATUS_LABELS,
   formatDate,
+  formatInstant,
   isOverdue,
 } from "./task-format";
 
@@ -55,7 +56,9 @@ export function TaskCard({
         </div>
         <div>
           <dt>Created by</dt>
-          <dd>{nameOf(task.creator_id)}</dd>
+          <dd>
+            {nameOf(task.creator_id)} · {formatInstant(task.created_at)}
+          </dd>
         </div>
       </dl>
       <footer className="task-actions">

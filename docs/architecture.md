@@ -140,7 +140,8 @@ src/
                 generated/schema.ts (from openapi.json)
   features/
     auth/       AuthProvider (token state, 401 → login), LoginPage, RequireAuth
-    tasks/      TasksPage, TaskCard, TaskFormDialog, FilterBar, filter/URL hooks
+    tasks/      TasksPage, TaskCard, TaskFormDialog, FilterBar, SortControl,
+                filter/sort/URL hooks
     exports/    ExportPanel (request, poll, authenticated download)
   components/   Modal, ConfirmDialog, Field, Pagination
 ```
