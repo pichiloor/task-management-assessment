@@ -1,68 +1,94 @@
 # Thought process
 
-## Current scope
+How the work was approached, in the order it happened. The decisions
+themselves, with alternatives, are in [decisions.md](decisions.md); the
+dated record of what each AI tool did is in [ai-log.md](ai-log.md).
 
-Step 1 only: environment, repository, empty packages and quality tools.
-No application behavior, migrations, services, UI or tests have been implemented.
+## 1. Read the brief for what is evaluated, not only what is required
 
-## Decisions already approved before this session
+The requirements list is long (CRUD, JWT, pagination, filters, PostgreSQL,
+80% coverage, Docker, Swagger, rate limiting, Celery, React, seed data), but
+the evaluation criteria are few: Clean Architecture, testing (TDD
+preferred), code quality, working functionality with a clean browser
+console, a clear presentation, and critical use of GenAI. Every requirement
+was planned so that it also produces evidence for one of those criteria:
 
-These come from the user-approved plan; the original proposer of each design
-choice is not established by this session and is not inferred here.
+| Criterion | Evidence planned for it |
+| --- | --- |
+| Clean Architecture | Layers enforced by import-linter; use cases tested with fakes |
+| Testing / TDD | Red/green commit pairs; integration tests on real PostgreSQL and Redis; coverage gate in CI |
+| Code quality | mypy strict, Ruff, ESLint, TypeScript strict, pre-commit = CI |
+| Functionality | Seeded demo, one-command start, checks in a real browser at two widths |
+| GenAI | Every change reviewed by a second model; findings, rejections and corrections logged |
 
-- FastAPI, Pydantic v2, synchronous SQLAlchemy 2, PostgreSQL and Alembic.
-- Clean Architecture with import contracts enforced in hooks and later CI.
-- PyJWT with Argon2 password hashing; secrets from environment variables.
-- Creator/assignee visibility; creator edits general fields and deletes;
-  assignee changes status; only active existing users may be assigned.
-- Redis-backed rate limiting with per-process memory fallback; queue publication
-  failure returns a controlled error. Celery processes CSV exports.
-- React, TypeScript, Vite, TanStack Query, React Router and generated OpenAPI types.
-- Same-origin nginx routing; sessionStorage tokens with documented XSS exposure.
-  HttpOnly cookies plus CSRF protection are a documented alternative.
-- At least 80% backend coverage at implementation time; TDD for critical rules.
-- No cloud deployment, chatbot, public registration or automated browser E2E.
+## 2. Plan before code
 
-## Explicit user decisions for this session
+Before writing code, a 16-step plan was written and approved by the author
+(tooling, Compose, domain, persistence, auth, CRUD, seed, rate limiting,
+exports, CI, frontend, coverage, docs, clean-clone check, code study,
+submission). Each step had to end in a working, committed state, and each
+step started only on the author's instruction. This kept every step small
+enough to review.
 
-- Public `pichiloor/task-management-assessment` repository on `main`.
-- Repository-local Git identity using the account name and GitHub noreply email.
-- No application logic and no pytest or other test suites in this step.
-- English repository content, as required by the approved plan.
+## 3. Rules first, frameworks last
 
-## Scaffold decisions made by Codex
+The domain and use cases were written first, test-first, with no database or
+web framework. That forced the business questions early:
 
-- Keep the canonical log at `docs/ai-log.md` as requested, with a link from the
-  plan's `docs/genai/ai-log.md` location.
-- Pin the installed Node 24.14.1 in `.nvmrc`; future containers should align with
-  Node 24 rather than the previously downloaded Node 22 image.
-- Use psycopg 3's binary distribution for the synchronous PostgreSQL driver,
-  argon2-cffi for Argon2, and uvicorn for the ASGI server.
-- Use local hooks backed by uv.lock for Python tools, avoiding duplicate tool
-  versions. Use detect-secrets plus private-key detection.
-- Add explicit domain/application-to-API dependency restrictions to enforce the
-  inward dependency rule in addition to the plan's required forbidden imports.
-- Install frontend dependencies and configure strict TypeScript/ESLint without
-  generating a demo application. Frontend tests remain a later enhancement.
-- Keep Docker/nginx as explicit placeholders and CI manual-only with a scope
-  notice; real service CI remains a later step and no test success is implied.
-  (Step 10 replaced that placeholder with the real CI.)
-- Keep caches, temporary files and dependency installations inside this repository.
+- Who can see a task? Its creator and its assignee.
+- Who can change what? The creator changes everything and deletes; the
+  assignee may only change the status.
+- What does "completed" mean? `completed_at` is set when a task becomes
+  completed and cleared when it is reopened; the database enforces it too.
+- What happens to a task when its assignee is deleted? It becomes unassigned
+  (`SET NULL`); a creator cannot be deleted while they own tasks
+  (`RESTRICT`).
 
-## Alternatives and tradeoffs to revisit
+Only then came SQLAlchemy, FastAPI, Celery and React, each as an adapter
+around rules that were already tested.
 
-Document actual evaluations when implementation starts. Planned limitations
-include sessionStorage token exposure to XSS, no token revocation, per-process
-rate-limit fallback, and non-atomic database/queue publication without an outbox.
+## 4. Treat AI output as a proposal
 
-## Validation and remaining work
+Claude Code wrote most of the code. It was never accepted on its own word:
 
-Record actual scaffold checks in [GenAI validation](genai/validation.md).
-Functional correctness, coverage, performance and Docker startup are pending.
+- Tests were written before the code and run red first; for review fixes, a
+  test had to fail without the fix. Several times the AI's own test turned out
+  to pass without the fix (for example, race tests that paused at the wrong
+  moment) and had to be rewritten until it did fail.
+- A different model, OpenAI Codex (`gpt-6-astra`), reviewed every change in a
+  read-only sandbox, repeatedly, until it reported no new defects. It found
+  real problems the first model missed, including a way the test fixture
+  could drop the real database and several race conditions.
+- Behavior was also checked live: over HTTP through the running stack, with
+  Redis or PostgreSQL stopped, in Chromium at desktop and phone widths.
+- When the AI's justification for a decision was overstated (slowapi), the
+  log says so.
 
-## Dependency compatibility discovered during setup
+Details and examples: [genai/](genai/README.md).
 
-TypeScript 5.9.3 satisfies both typescript-eslint and openapi-typescript; npm
-rejected the initial attempt with TypeScript 7. ESLint 10 is supported by all
-selected plugins and replaces the briefly selected, deprecated ESLint 9.
-These are Codex tooling choices made during dependency resolution.
+## 5. Failure modes as features
+
+Much of the design is about what happens when something breaks, because that
+is where simple implementations go wrong:
+
+- Redis down: CRUD keeps working, health says `degraded`, rate limiting
+  falls back to memory, exports return 503 instead of hanging.
+- PostgreSQL slow or down: connection, statement and lock timeouts; health
+  returns 503.
+- A job lost between API and worker: reconciled every minute.
+- A commit that fails: the client gets a 500, never a 200 for unsaved data.
+- A token rejected mid-session: the frontend returns to the login page; a
+  late rejection from an old session does not end a new one.
+
+## 6. What was left out on purpose
+
+- Registration, password reset and user administration: not asked for; the
+  seed provides users.
+- Refresh tokens and revocation: the token lifetime and the check that the
+  user is still active cover the demo.
+- Cloud deployment and TLS: the exercise asks for local Docker.
+- Automated end-to-end browser tests in CI: the frontend has component
+  and flow tests with a faked network, and the full stack was checked by
+  hand in Chromium; a Playwright suite would be the next step.
+- Keyset pagination and a transactional outbox: measured or reasoned to be
+  unnecessary at this size, and documented as the next step.

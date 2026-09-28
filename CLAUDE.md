@@ -7,7 +7,8 @@ use cases, TDD), 4 (SQLAlchemy repositories, Alembic) and 5 (JWT login,
 Argon2, auth endpoints) and 6 (task CRUD endpoints, `/api/health`, `api`
 Compose service), 7 (demo seed), 8 (rate limiting) and 9 (Celery worker and
 CSV export), 10 (CI on GitHub Actions) and 11 (React frontend behind nginx)
-are done. Next: documentation, clean-clone check and submission.
+are done, and the documentation (README, `docs/`, GenAI evidence in
+`docs/genai/`) is written. Next: clean-clone check and submission.
 
 Frontend (`frontend/`): Vite + React + TypeScript strict, TanStack Query,
 React Router. Types come from the OpenAPI document: after changing an

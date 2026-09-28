@@ -655,3 +655,23 @@
   open and a failed one showed no error. The flag is now set in the effect
   setup, and the test renderer uses StrictMode like `main.tsx` (the create
   test failed with it before the fix).
+
+## Steps 12 and 13: coverage check and documentation (2026-09-28)
+
+- Written by Claude (Claude Code, Opus 5.5) at the author's request;
+  reviewed by Codex (`gpt-6-astra`, read-only) for accuracy against the code.
+- Coverage: the backend suite was rerun unchanged in Docker (393 passed,
+  98.51%); the frontend has 27 tests. No frontend coverage percentage is
+  reported, because no coverage tool is installed for it.
+- Performance evidence for the GenAI section: a throwaway `perf` database
+  with 20,026 tasks, `EXPLAIN ANALYZE` of the listing queries (2.08 ms page
+  1, 0.09 ms filtered through `ix_tasks_status_due_date`, 6.00 ms at page
+  500), then dropped. Results in `docs/genai/validation.md`.
+- Documents: README (quick start, demo users, architecture, API, tests,
+  decisions, limitations), `architecture.md`, `decisions.md`,
+  `thought-process.md`, `presentation.md`, and `docs/genai/` rewritten from
+  the step 1 placeholders. Every claim was checked against the code or this
+  log before writing it (for example, title trimming, the 404 rule, the CSV
+  formula guard, the partial index). The redirect file
+  `docs/genai/ai-log.md` was removed; the index is `docs/genai/README.md`.
+- Screenshots in `docs/screenshots/` are from the Chromium check of step 11.
