@@ -12,7 +12,7 @@ below was produced by running the command; the dated details are in the
 | "Fails without the fix" | Tests that pass for the wrong reason | Every review fix: the fix is reverted or the test run before it |
 | mypy strict, Ruff, ESLint, `tsc` (TypeScript strict) | Type errors, dead code, unsafe patterns | Every commit (pre-commit) and CI |
 | import-linter | Layer violations (e.g. a use case importing SQLAlchemy) | Every commit and CI |
-| Integration tests on real PostgreSQL and Redis | Behavior SQLite or mocks would hide: CHECK constraints, locks, `NULLS LAST`, Redis failover, a real Celery worker | Docker and CI |
+| Integration tests on real PostgreSQL and Redis | Behavior SQLite or mocks would not reproduce: row and advisory locks, timeouts, PostgreSQL types, Redis failover, a real Celery worker | Docker and CI |
 | Review by a second model | Design flaws, races, security issues the first model did not see | After every change, repeated until "no new defects" |
 | Live checks on the running stack | Wiring, configuration, real failure modes | Every step |
 | Real browser | Layout, accessibility, console errors | Frontend |

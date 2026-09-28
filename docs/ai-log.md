@@ -695,3 +695,7 @@
   republishes it);
   the repositories step had no separate red run; mypy covers `backend/app`,
   not tests, migrations or scripts.
+- Third documentation review: the reason given for not testing on SQLite
+  listed CHECK constraints and `NULLS LAST`, which SQLite supports (Codex
+  checked both). The reason is now the PostgreSQL features the code really
+  depends on: `SKIP LOCKED`, advisory locks, timeouts, strict types.

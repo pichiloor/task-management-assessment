@@ -121,8 +121,9 @@ browser never talks to the API container directly.
 `pre-commit run --all-files`, so local hooks and CI are the same checks.
 Docker images and GitHub Actions are pinned (actions by commit SHA).
 
-**Tests against real PostgreSQL and Redis.** SQLite would hide PostgreSQL
-behavior (CHECK constraints, `FOR UPDATE SKIP LOCKED`, advisory locks,
-`NULLS LAST`). The test database is dropped and rebuilt on each run and must
+**Tests against real PostgreSQL and Redis.** The code relies on PostgreSQL
+features SQLite does not have or treats differently: `FOR UPDATE SKIP
+LOCKED`, advisory locks, statement and lock timeouts, partial indexes and
+strict column types. The test database is dropped and rebuilt on each run and must
 be named exactly `<POSTGRES_DB>_test`, so the real database cannot be
 dropped by mistake.

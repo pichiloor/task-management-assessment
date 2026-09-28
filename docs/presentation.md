@@ -87,8 +87,10 @@ per-process memory fallback in the rate limiter, local deployment only.
   repository for API and worker; async only with a measured need.
 - **Why 404 instead of 403 for other users' tasks?** Not revealing that an
   ID exists.
-- **Why not SQLite for tests?** It would hide CHECK constraints, locks,
-  `NULLS LAST` and `SKIP LOCKED`.
+- **Why not SQLite for tests?** The code uses PostgreSQL features SQLite
+  lacks or handles differently: `FOR UPDATE SKIP LOCKED`, advisory locks,
+  statement and lock timeouts, strict column types. Tests should run on
+  what production runs.
 - **What if Redis is down?** CRUD works, rate limiting counts in memory for
   30 s at a time, exports return 503, health reports `degraded`.
 - **How do you know a job is not lost?** PostgreSQL row first; the beat
