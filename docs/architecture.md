@@ -111,8 +111,11 @@ GET /api/v1/exports/{id}/download   409 pending/failed · 410 expired or missing
 ```
 
 - The row is committed before publishing, so a job never points to a row
-  that does not exist. If publishing fails, the export is marked failed and
-  the API returns 503 `queue_unavailable`.
+  that does not exist. If publishing fails, the API returns 503
+  `queue_unavailable` and tries to mark the export failed; if the database
+  is also unavailable at that moment, the export stays pending and the
+  maintenance task republishes it after 2 minutes (and fails it after 30
+  if it still cannot run).
 - The worker applies the same visibility rules as the listing, at the time
   it runs.
 - CSV cells starting with `=`, `+`, `-`, `@`, tab or carriage return are

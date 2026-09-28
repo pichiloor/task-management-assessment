@@ -23,9 +23,11 @@ models), is shorter but couples business rules to the web and database
 frameworks, which is exactly what the panel evaluates.
 
 **Repositories return detached domain objects and never commit.** The
-request (or the worker job) owns the transaction. A use case that fails
-halfway leaves nothing saved; a test checks that a PATCH failing after a
-valid change persists nothing.
+request (or the worker job) owns the transaction. A task operation that
+fails halfway leaves nothing saved; a test checks that a PATCH failing after
+a valid change persists nothing. Export requests deliberately commit the
+export row before queueing the job, so a failure to queue leaves a recorded
+export (see below).
 
 **Permissions as domain functions, 404 for invisible tasks.** Returning 403
 for a task the user cannot see would reveal that it exists. Single-task

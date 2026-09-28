@@ -8,7 +8,7 @@ below was produced by running the command; the dated details are in the
 
 | Check | What it catches | When |
 | --- | --- | --- |
-| Tests written first, run red | Code that does not do what was asked | Domain, use cases, auth, endpoints, seed, rate limiting (separate red commits); repositories and export worker (tests first, same commit as the code) |
+| Tests written first | Code that does not do what was asked | Every step from 3 on. Red run executed and committed separately for domain, use cases, auth, endpoints, seed and rate limiting; for repositories and the export worker the tests were written first but committed with the code, and for repositories no separate red run was executed |
 | "Fails without the fix" | Tests that pass for the wrong reason | Every review fix: the fix is reverted or the test run before it |
 | mypy strict, Ruff, ESLint, `tsc` (TypeScript strict) | Type errors, dead code, unsafe patterns | Every commit (pre-commit) and CI |
 | import-linter | Layer violations (e.g. a use case importing SQLAlchemy) | Every commit and CI |
@@ -93,7 +93,8 @@ queries use batches of 1000 IDs to stay under the PostgreSQL protocol's
 
 ## Idiomatic quality
 
-- mypy `--strict` over the whole backend, TypeScript `strict` over the
+- mypy `--strict` over the application code (`backend/app`; tests,
+  migrations and scripts are not type-checked), TypeScript `strict` over the
   frontend, zero ESLint warnings allowed.
 - SQLAlchemy 2 style (`select()`, `Mapped[]`), Pydantic v2 models, FastAPI
   dependencies with `Annotated`; no deprecated APIs (the backend suite runs

@@ -112,8 +112,10 @@ The backend follows Clean Architecture. Dependencies point inward, and
 
 `create_app()` is the composition root: it reads and validates settings at
 startup (a missing or short `JWT_SECRET` stops the process), builds the
-concrete adapters and hands them to the use cases. Each request runs in one
-database transaction that is committed before the response is sent.
+concrete adapters and hands them to the use cases. Each task request runs in
+one database transaction that is committed before the response is sent.
+Export requests are the exception: the export row is committed in its own
+transaction before the job is queued (see the architecture document).
 
 The frontend is organized by feature (`auth`, `tasks`, `exports`) on top of a
 small typed API client. Its TypeScript types are generated from the backend's

@@ -687,3 +687,11 @@
   for that session; it said CI runs on every push (only `main` and pull
   requests); and a test command left the shell in `backend/`, breaking the
   next one.
+- Second documentation review, four more overstated claims, all accepted:
+  "each request runs in one transaction" and "a use case that fails halfway
+  leaves nothing saved" ignored exports, which commit the row before
+  queueing on purpose; a failed publish only *tries* to mark the export
+  failed (if the database is down too, it stays pending until maintenance
+  republishes it);
+  the repositories step had no separate red run; mypy covers `backend/app`,
+  not tests, migrations or scripts.
