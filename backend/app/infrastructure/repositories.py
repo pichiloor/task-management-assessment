@@ -9,11 +9,12 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, UnaryExpression, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.application.ports import TaskQuery, UnitOfWork, UnitOfWorkFactory
+from app.application.ports import TaskQuery, TaskSort, UnitOfWork, UnitOfWorkFactory
 from app.domain.export import Export, ExportStatus
 from app.domain.task import Task, TaskStatus
 from app.domain.user import User
@@ -98,7 +99,7 @@ class SqlTaskRepository:
         rows = self._session.scalars(
             select(TaskRow)
             .where(*conditions)
-            .order_by(*_LISTING_ORDER)
+            .order_by(*_ORDER[query.sort])
             .limit(query.page_size)
             .offset((query.page - 1) * query.page_size)
         )
@@ -110,14 +111,19 @@ class SqlTaskRepository:
         rows = self._session.scalars(
             select(TaskRow)
             .where(*_conditions(query))
-            .order_by(*_LISTING_ORDER)
+            .order_by(*_ORDER[query.sort])
             .execution_options(yield_per=500)
         )
         for row in rows:
             yield _to_task(row)
 
 
-_LISTING_ORDER = (TaskRow.due_date.asc().nulls_last(), TaskRow.id.asc())
+_ORDER: dict[TaskSort, tuple[UnaryExpression[Any], ...]] = {
+    TaskSort.DUE_DATE: (TaskRow.due_date.asc().nulls_last(), TaskRow.id.asc()),
+    TaskSort.DUE_DATE_DESC: (TaskRow.due_date.desc().nulls_last(), TaskRow.id.desc()),
+    TaskSort.CREATED_AT: (TaskRow.created_at.asc(), TaskRow.id.asc()),
+    TaskSort.CREATED_AT_DESC: (TaskRow.created_at.desc(), TaskRow.id.desc()),
+}
 
 
 def _conditions(query: TaskQuery) -> list[ColumnElement[bool]]:

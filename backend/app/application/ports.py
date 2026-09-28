@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import date, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
@@ -14,10 +15,20 @@ from app.domain.user import User
 Clock = Callable[[], datetime]
 
 
+class TaskSort(StrEnum):
+    """Listing order. A leading "-" means descending. Tasks without a due
+    date always come last, and ties are broken by ID in the same direction,
+    so pages are stable."""
+
+    DUE_DATE = "due_date"
+    DUE_DATE_DESC = "-due_date"
+    CREATED_AT = "created_at"
+    CREATED_AT_DESC = "-created_at"
+
+
 @dataclass(frozen=True)
 class TaskQuery:
-    """Already-validated listing request. Results must be ordered by
-    due date (nulls last), then ID, so pages are stable."""
+    """Already-validated listing request, ordered as `sort` says."""
 
     viewer_id: int
     status: TaskStatus | None
@@ -25,6 +36,7 @@ class TaskQuery:
     due_to: date | None
     page: int
     page_size: int
+    sort: TaskSort = TaskSort.DUE_DATE
 
 
 class TaskRepository(Protocol):

@@ -101,7 +101,7 @@ export interface paths {
         };
         /**
          * List tasks the caller created or is assigned to
-         * @description Ordered by due date (tasks without one last), then ID. `due_date` is an exact match and cannot be combined with `due_from`/`due_to`.
+         * @description Ordered by `sort` (default `due_date`; a leading `-` is descending). Tasks without a due date always come last; ties are broken by ID. `due_date` is an exact match and cannot be combined with `due_from`/`due_to`.
          */
         get: operations["list_tasks_api_v1_tasks_get"];
         put?: never;
@@ -327,6 +327,14 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * TaskSort
+         * @description Listing order. A leading "-" means descending. Tasks without a due
+         *     date always come last, and ties are broken by ID in the same direction,
+         *     so pages are stable.
+         * @enum {string}
+         */
+        TaskSort: "due_date" | "-due_date" | "created_at" | "-created_at";
         /**
          * TaskStatus
          * @enum {string}
@@ -697,6 +705,7 @@ export interface operations {
                 due_to?: string | null;
                 page?: number;
                 page_size?: number;
+                sort?: components["schemas"]["TaskSort"];
             };
             header?: never;
             path?: never;

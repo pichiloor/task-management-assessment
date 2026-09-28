@@ -4,7 +4,13 @@ from datetime import date
 from enum import Enum
 from typing import Final
 
-from app.application.ports import Clock, TaskQuery, TaskRepository, UserRepository
+from app.application.ports import (
+    Clock,
+    TaskQuery,
+    TaskRepository,
+    TaskSort,
+    UserRepository,
+)
 from app.domain.errors import ValidationError
 from app.domain.permissions import ensure_can_delete, ensure_can_update, ensure_can_view
 from app.domain.task import Task, TaskStatus
@@ -53,6 +59,7 @@ class TaskListFilters:
     due_to: date | None = None
     page: int = 1
     page_size: int = DEFAULT_PAGE_SIZE
+    sort: TaskSort = TaskSort.DUE_DATE
 
 
 @dataclass(frozen=True)
@@ -159,4 +166,5 @@ def to_task_query(viewer_id: int, f: TaskListFilters) -> TaskQuery:
         due_to=due_to,
         page=f.page,
         page_size=f.page_size,
+        sort=f.sort,
     )

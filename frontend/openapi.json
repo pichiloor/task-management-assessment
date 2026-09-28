@@ -487,6 +487,17 @@
         "title": "TaskPage",
         "type": "object"
       },
+      "TaskSort": {
+        "description": "Listing order. A leading \"-\" means descending. Tasks without a due\ndate always come last, and ties are broken by ID in the same direction,\nso pages are stable.",
+        "enum": [
+          "due_date",
+          "-due_date",
+          "created_at",
+          "-created_at"
+        ],
+        "title": "TaskSort",
+        "type": "string"
+      },
       "TaskStatus": {
         "enum": [
           "pending",
@@ -1062,7 +1073,7 @@
     },
     "/api/v1/tasks": {
       "get": {
-        "description": "Ordered by due date (tasks without one last), then ID. `due_date` is an exact match and cannot be combined with `due_from`/`due_to`.",
+        "description": "Ordered by `sort` (default `due_date`; a leading `-` is descending). Tasks without a due date always come last; ties are broken by ID. `due_date` is an exact match and cannot be combined with `due_from`/`due_to`.",
         "operationId": "list_tasks_api_v1_tasks_get",
         "parameters": [
           {
@@ -1153,6 +1164,15 @@
               "minimum": 1,
               "title": "Page Size",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TaskSort",
+              "default": "due_date"
             }
           }
         ],

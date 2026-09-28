@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from app.application.ports import QueueUnavailableError, TaskQuery
+from app.application.ports import QueueUnavailableError, TaskQuery, TaskSort
 from app.domain.export import Export, ExportStatus
 from app.domain.task import Task
 from app.domain.user import User
@@ -74,8 +74,20 @@ class InMemoryTaskRepository:
             )
             and (query.due_to is None or (t.due_date and t.due_date <= query.due_to))
         ]
-        rows.sort(key=lambda t: (t.due_date is None, t.due_date, t.id))
-        return rows
+        descending = query.sort.startswith("-")
+        if query.sort in (TaskSort.DUE_DATE, TaskSort.DUE_DATE_DESC):
+            dated = sorted(
+                (t for t in rows if t.due_date is not None),
+                key=lambda t: (t.due_date, t.id),
+                reverse=descending,
+            )
+            undated = sorted(
+                (t for t in rows if t.due_date is None),
+                key=lambda t: t.id,
+                reverse=descending,
+            )
+            return dated + undated
+        return sorted(rows, key=lambda t: (t.created_at, t.id), reverse=descending)
 
     def list(self, query: TaskQuery) -> tuple[list[Task], int]:
         rows = self._matching(query)

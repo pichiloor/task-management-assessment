@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query, Response, status
 
 from app.api.dependencies import CurrentUser, TaskServiceDep
 from app.api.schemas import ErrorResponse, TaskCreate, TaskOut, TaskPage, TaskUpdate
+from app.application.ports import TaskSort
 from app.application.tasks import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
@@ -75,8 +76,10 @@ def create_task(
     responses=INVALID_RESPONSE,
     summary="List tasks the caller created or is assigned to",
     description=(
-        "Ordered by due date (tasks without one last), then ID. `due_date` is an "
-        "exact match and cannot be combined with `due_from`/`due_to`."
+        "Ordered by `sort` (default `due_date`; a leading `-` is descending). "
+        "Tasks without a due date always come last; ties are broken by ID. "
+        "`due_date` is an exact match and cannot be combined with "
+        "`due_from`/`due_to`."
     ),
 )
 def list_tasks(
@@ -88,6 +91,7 @@ def list_tasks(
     due_to: date | None = None,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
+    sort: TaskSort = TaskSort.DUE_DATE,
 ) -> TaskPage:
     result = service.list(
         user.id,
@@ -98,6 +102,7 @@ def list_tasks(
             due_to=due_to,
             page=page,
             page_size=page_size,
+            sort=sort,
         ),
     )
     return TaskPage(
